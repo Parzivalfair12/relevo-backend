@@ -1,0 +1,54 @@
+# El nombre fijo evita que Docker cree otro contenedor y volumen si la carpeta cambia de nombre o de lugar.
+name: turnos-backend
+
+# Desarrollo (por defecto):   docker compose up -d mongo        → solo MongoDB; la API se corre con npm run dev
+# Todo en contenedores:       docker compose --env-file .env.production --profile app up -d --build   → MongoDB + API (la web va en ../frontend)
+# `--env-file .env.production` es importante: sin él, Compose lee el .env de desarrollo (secretos de ejemplo, CORS de :5173).
+# Copia `.env.production.example` a `.env.production` y pon secretos reales (la API no arranca con los de ejemplo).
+services:
+  mongo:
+    image: mongo:7
+    # Conjunto de réplicas de un nodo (necesario para transacciones)
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    # Solo desde este equipo: MongoDB aquí no pide usuario ni contraseña, no debe quedar expuesto a la red
+    # 27018 y no 27017: así no choca con un MongoDB instalado en el equipo (que suele ocupar el 27017)
+    ports: ["127.0.0.1:27018:27017"]
+    volumes: ["mongo-data:/data/db"]
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }"
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  api:
+    profiles: ["app"]
+    build: .
+    image: turnos-api
+    restart: unless-stopped
+    depends_on:
+      mongo: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      MONGO_URI: mongodb://mongo:27017/turnos?replicaSet=rs0&directConnection=true
+      # Vacíos por defecto a propósito: la API se niega a arrancar sin secretos reales (así `docker compose up -d mongo` no los pide)
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      EXPORT_CITY: ${EXPORT_CITY:-Neiva}
+      TRUST_PROXY: "1"   # Nginx de la web va delante
+    # La API no escribe en disco ni necesita privilegios
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    # Sin puerto publicado: la web (Nginx) la alcanza por la red `turnos`
+
+volumes:
+  mongo-data:
+
+networks:
+  default:
+    name: turnos   # la web (../frontend) se une a esta red

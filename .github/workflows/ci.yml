@@ -1,0 +1,41 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Huella del motor y los esquemas
+        run: npm run engine:check
+      - name: Estilo y errores (ESLint)
+        run: npm run lint
+      - name: Tipos
+        run: npm run typecheck
+      - name: Dependencias de producción sin vulnerabilidades conocidas
+        run: npm audit --omit=dev --audit-level=moderate
+      # Las pruebas de la API usan la base turnos_test de un MongoDB real; el healthcheck del compose inicia la réplica de un nodo
+      - name: MongoDB
+        run: docker compose up -d --wait mongo
+      - name: Pruebas
+        run: npm test
+
+  imagen:
+    # La imagen de la API debe construirse y arrancar (comprueba también que rechaza la configuración de ejemplo en producción)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t turnos-api .
+      - name: Rechaza arrancar con secretos de ejemplo
+        run: |
+          set +e
+          docker run --rm -e NODE_ENV=production -e MONGO_URI=mongodb://x/turnos -e JWT_ACCESS_SECRET=cambia-esto-por-un-secreto-largo-de-32-caracteres-o-mas -e JWT_REFRESH_SECRET=otro-secreto-de-ejemplo-de-al-menos-32-caracteres turnos-api 2>&1 | tee salida.txt
+          grep -q "Configuración insegura para producción" salida.txt
