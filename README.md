@@ -27,6 +27,8 @@ El `.env` de desarrollo sale de `.env.example` (`cp .env.example .env`). Cambia 
 
 El seed carga 3 usuarios, 3 servicios, 18 terapeutas y 8 cuadros (julio y agosto publicados, septiembre en borrador). Son contraseñas de ejemplo: no sirven para producción (el seed se niega a correr con `NODE_ENV=production`).
 
+**Cuentas reales (administrador y Savitra).** Se definen en el `.env` (`ADMIN_*` y `SAVITRA_*`, contraseñas de mínimo 12 caracteres) y se crean con `npm run users:bootstrap`. A diferencia del seed, no borra nada y se puede repetir: actualiza la contraseña, el rol y los servicios de cada cuenta. Savitra queda como coordinadora con todos los servicios que existan al correrlo; si creas servicios después, vuelve a correrlo (o asígnalos desde Administración). Las credenciales no aparecen en la pantalla de inicio de sesión.
+
 Después, en `../frontend`: `npm install` y `npm run dev` (http://localhost:5173).
 
 ## Todo en contenedores (como en producción)

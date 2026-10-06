@@ -90,4 +90,22 @@ describe('motor de turnos', () => {
     expect(s[0].hours).toBe(s[0].M * 6 + s[0].T * 6 + s[0].N * 12 + s[0].MT * 12);
     expect(s[0].workDays + s[0].restDays + s[0].absDays).toBe(30);
   });
+
+  it('la meta fijada a mano se respeta y el resto se reparte entre quienes no la traen', () => {
+    const staff = ['a', 'b', 'c', 'd'].map(i => P(i));
+    staff[0] = { ...staff[0], targetHours: 120 };
+    const cfg: Config = { year: 2026, month: 8, staff, cov, rules, locked: {}, seed: 3 };
+    const t = targets(cfg, generate(cfg));
+    expect(t.a).toBe(120);
+    expect(t.b).toBeCloseTo(200, 5); // (720 − 120) / 3
+    expect(t.c).toBeCloseTo(200, 5);
+  });
+
+  it('una meta de apoyo se devuelve tal cual; sin meta, el apoyo sigue siendo null', () => {
+    const staff = [P('a'), P('b'), P('c'), { ...P('d', 'apoyo'), targetHours: 48 }, P('e', 'apoyo')];
+    const cfg: Config = { year: 2026, month: 8, staff, cov, rules, locked: {}, seed: 3 };
+    const t = targets(cfg, generate(cfg));
+    expect(t.d).toBe(48);
+    expect(t.e).toBeNull();
+  });
 });

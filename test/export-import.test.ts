@@ -164,6 +164,64 @@ describe('importar: ida y vuelta con lo exportado', () => {
   });
 });
 
+describe('importar: varias tablas, planta o apoyo y meta de horas', () => {
+  const members = (kinds: Record<string, { kind?: 'fija' | 'apoyo'; targetHours?: number }> = {}) =>
+    [ana, bea, cira, dora].map(t => ({ therapistId: String(t._id), cells: day(31), ...(kinds[String(t._id)] ?? {}) }));
+  const batch = (tables: object[], token = coord) => request(app).post(api('/schedules/import/batch')).set(authed(token)).send({ tables });
+
+  it('crea una tabla por cuadro, con el tipo y la meta que se eligieron al importar', async () => {
+    const r = await batch([
+      { serviceId: String(fx.uci._id), year: 2026, month: 10, members: members({ [String(ana._id)]: { kind: 'apoyo', targetHours: 96 }, [String(dora._id)]: { kind: 'fija' } }) }
+    ]);
+    expect(r.status).toBe(201);
+    expect(r.body.results).toHaveLength(1);
+    const s = r.body.results[0].schedule;
+    const m = (t: any) => s.members.find((x: any) => x.therapistId === String(t._id));
+    expect(m(ana)).toMatchObject({ kind: 'apoyo', targetHours: 96 });   // el archivo manda sobre el directorio (ana es de planta allí)
+    expect(m(dora)).toMatchObject({ kind: 'fija', targetHours: null }); // y sin meta queda automática
+    expect(m(bea).kind).toBe('fija');                                    // sin kind se usa el del directorio
+  });
+
+  it('no es todo o nada: un duplicado o un servicio ajeno no frenan a las demás', async () => {
+    const r = await batch([
+      { serviceId: String(fx.uci._id), year: 2026, month: 11, members: members() },
+      { serviceId: String(fx.uci._id), year: 2026, month: 11, members: members() },   // mismo mes: duplicado
+      { serviceId: String(fx.hos._id), year: 2026, month: 11, members: members() }    // la coordinadora no tiene este servicio
+    ]);
+    expect(r.status).toBe(201);
+    const [ok, dup, ajeno] = r.body.results;
+    expect(ok.schedule).toBeTruthy();
+    expect(dup.error.code).toBe('DUPLICATE');
+    expect(ajeno.error.code).toBe('FORBIDDEN');
+    expect(await Schedule.countDocuments({ serviceId: fx.uci._id, year: 2026, month: 11 })).toBe(1);
+  });
+
+  it('valida el lote: sin tablas o con una meta imposible', async () => {
+    expect((await batch([])).status).toBe(400);
+    expect((await batch([{ serviceId: String(fx.uci._id), year: 2027, month: 0, members: members({ [String(ana._id)]: { targetHours: 9999 } }) }])).status).toBe(400);
+  });
+
+  it('el resumen previo sin servicio elegido propone el servicio por el título y trae las horas del archivo', async () => {
+    const s = (await Schedule.findOne({ serviceId: fx.uci._id, year: 2026, month: 8 }).lean()) as any;
+    const file = (await download(admin, s._id, 'xlsx')).body as Buffer;
+    const r = await request(app).post(api('/schedules/import/preview')).set(authed(coord)).set('Content-Type', 'application/octet-stream').send(file);
+    expect(r.status).toBe(200);
+    expect(r.body.tables[0].serviceId).toBe(String(fx.uci._id));
+    expect(r.body.tables[0].people.every((p: any) => p.hours === null || typeof p.hours === 'number')).toBe(true);
+  });
+
+  it('cambiar la meta de una persona en el cuadro se guarda y se conserva al cambiar otra cosa', async () => {
+    const s = (await Schedule.findOne({ serviceId: fx.uci._id, year: 2026, month: 10 }).lean()) as any;
+    const team = s.members.map((m: any) => ({ therapistId: String(m.therapistId), kind: m.kind, targetHours: String(m.therapistId) === String(bea._id) ? 120 : m.targetHours ?? null }));
+    const r = await request(app).patch(api(`/schedules/${s._id}`)).set(authed(coord)).send({ version: s.__v, team });
+    expect(r.status).toBe(200);
+    expect(r.body.members.find((x: any) => x.therapistId === String(bea._id)).targetHours).toBe(120);
+    // Un PATCH de equipo sin el campo no borra las metas
+    const r2 = await request(app).patch(api(`/schedules/${s._id}`)).set(authed(coord)).send({ version: r.body.version, team: team.map((t: any) => ({ therapistId: t.therapistId, kind: t.kind })) });
+    expect(r2.body.members.find((x: any) => x.therapistId === String(bea._id)).targetHours).toBe(120);
+  });
+});
+
 describe('importar: el lector', () => {
   it('casillas vacías son libres; los turnos y las ausencias reconocidos quedan fijados', () => {
     const r = normalizeCells(['m', '', 'N', 'mt', ' L ', 'V', 'I', 'P', 'vac', ''], 10);

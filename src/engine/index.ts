@@ -9,7 +9,8 @@ export type Code = 'M' | 'T' | 'N' | 'MT' | 'L' | 'V' | 'I' | 'P';
 export type Cell = Code | '';
 export type Kind = 'fija' | 'apoyo';
 
-export interface Person { id: string; name: string; kind: Kind }
+/** targetHours: meta mensual fijada a mano para esta persona; si falta, se reparte automáticamente */
+export interface Person { id: string; name: string; kind: Kind; targetHours?: number | null }
 export interface Coverage { M: number; T: number; N: number }
 export interface Rules {
   seq: boolean; restAfterN: boolean; weekends: boolean; balance: boolean;
@@ -142,19 +143,24 @@ function balance(cfg: Config, grid: Grid, n: number, rand: () => number) {
   }
 }
 
-/** Meta de horas por persona de planta (proporcional a sus días disponibles, descontando lo que cubre el apoyo). null = apoyo. */
+/**
+ * Meta de horas por persona de planta (proporcional a sus días disponibles, descontando lo que cubre el apoyo). null = apoyo.
+ * Si una persona trae `targetHours`, esa es su meta y el resto se reparte entre quienes no la traen.
+ */
 export function targets(cfg: Pick<Config, 'year' | 'month' | 'staff' | 'cov' | 'rules'>, grid: Grid): Record<string, number | null> {
   const { year, month, staff, cov, rules } = cfg;
   const n = daysIn(year, month);
   const perDay = cov.M * 6 + cov.T * 6 + cov.N * 12;
   let total = perDay * n, wsum = 0;
   const w: Record<string, number> = {}, t: Record<string, number | null> = {};
+  const fixed = (p: Person) => typeof p.targetHours === 'number';
   staff.forEach(p => {
+    if (fixed(p)) { if (!isSup(p, rules)) total -= p.targetHours!; else total -= hoursOfRow(grid[p.id]); return; }
     if (isSup(p, rules)) { total -= hoursOfRow(grid[p.id]); return; }
     let a = 0; for (let i = 0; i < n; i++) if (!OFF.includes(grid[p.id][i])) a++;
     w[p.id] = a; wsum += a;
   });
-  staff.forEach(p => { t[p.id] = isSup(p, rules) ? null : (wsum ? Math.max(total, 0) * w[p.id] / wsum : 0); });
+  staff.forEach(p => { t[p.id] = fixed(p) ? p.targetHours! : isSup(p, rules) ? null : (wsum ? Math.max(total, 0) * w[p.id] / wsum : 0); });
   return t;
 }
 

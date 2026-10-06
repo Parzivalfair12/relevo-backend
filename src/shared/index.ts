@@ -14,7 +14,7 @@ export const SHIFT_DESC: Record<ShiftCode, string> = {
   MT:'Doble · 07:00–19:00 · 12 h', V:'Vacaciones', I:'Incapacidad', P:'Permiso o licencia'
 };
 export const SERVICE_COLORS = ['#2BB3BD','#F29E6B','#7C8CE0','#6BC48F','#E88FB0','#F2C14E'] as const;
-export const POSITIONS = ['Terapeuta respiratoria','Jefe de terapia respiratoria','Auxiliar'] as const;
+export const POSITIONS = ['Terapeuta respiratoria','Jefe de terapia respiratoria','Auxiliar','Médico general','Odontólogo'] as const;
 
 /* ===== Esquemas Zod (los usan la API y la web) ===== */
 export const roleSchema = z.enum(['admin','coord']);
@@ -73,12 +73,14 @@ export const cellChangeSchema = z.object({
   code: shiftCodeSchema.nullable()      // null = quitar la fijación (el cuadro se recalcula)
 });
 export const cellsUpdateSchema = z.object({ version, changes: z.array(cellChangeSchema).min(1).max(2000) });
+/** Meta mensual de horas por persona (un mes tiene como máximo 744 h) */
+export const targetHoursSchema = z.number().min(0).max(744);
 export const scheduleUpdateSchema = z.object({
   version,
   status: scheduleStatusSchema.optional(),
   coverage: coverageSchema.optional(),
   rules: rulesSchema.optional(),
-  team: z.array(z.object({ therapistId: objectId, kind: kindSchema })).min(2, 'Se necesitan al menos 2 terapeutas').max(60).optional()
+  team: z.array(z.object({ therapistId: objectId, kind: kindSchema, targetHours: targetHoursSchema.nullable().optional() })).min(2, 'Se necesitan al menos 2 terapeutas').max(60).optional()
 });
 export const generateSchema = z.object({ version, variant: z.boolean().default(false) });
 const absenceRange = z.object({ version, therapistId: objectId, from: dayNumber, to: dayNumber });
@@ -92,10 +94,18 @@ export const scheduleListQuerySchema = z.object({ service: objectId.optional(), 
 export const exportQuerySchema = z.object({ format: z.enum(['xlsx', 'ods']).default('xlsx') });
 export const importSchema = z.object({
   serviceId: objectId, year: z.number().int().min(2024).max(2100), month: z.number().int().min(0).max(11),
-  /** Una entrada por persona que se importa; `cells` es el texto de cada día tal como viene en el archivo */
-  members: z.array(z.object({ therapistId: objectId, cells: z.array(z.string().max(40)).max(31) })).min(2, 'Se necesitan al menos 2 terapeutas').max(60)
+  /**
+   * Una entrada por persona que se importa; `cells` es el texto de cada día tal como viene en el archivo.
+   * `kind` (planta o apoyo) y `targetHours` (meta mensual) son opcionales: sin ellos se usa el tipo del directorio y la meta automática.
+   */
+  members: z.array(z.object({
+    therapistId: objectId, cells: z.array(z.string().max(40)).max(31),
+    kind: kindSchema.optional(), targetHours: targetHoursSchema.optional()
+  })).min(2, 'Se necesitan al menos 2 terapeutas').max(60)
 });
-export const importPreviewQuerySchema = z.object({ serviceId: objectId });
+/** Varias tablas del archivo de una vez: cada una crea su propio cuadro */
+export const importBatchSchema = z.object({ tables: z.array(importSchema).min(1, 'Elige al menos una tabla.').max(30) });
+export const importPreviewQuerySchema = z.object({ serviceId: objectId.optional() });
 
 /* ----- Resumen: el período va como YYYY-MM (mes 01 a 12, formato de URL; en el código los meses siguen siendo 0 a 11) ----- */
 const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'El período debe ser AAAA-MM (por ejemplo 2026-09).');
@@ -107,7 +117,7 @@ export interface UserDTO { id: string; name: string; email: string; role: Role; 
 /** scheduleCount y therapistCount solo los usa la pantalla de Administración */
 export interface ServiceDTO { id: string; name: string; color: string; scheduleCount?: number; therapistCount?: number }
 export interface TherapistDTO { id: string; name: string; document: string; position: string; defaultKind: Kind; serviceIds: string[]; active: boolean; scheduleCount: number }
-export interface ScheduleMemberDTO { therapistId: string; name: string; kind: Kind; days: Cell[]; locked: Record<number, ShiftCode> }
+export interface ScheduleMemberDTO { therapistId: string; name: string; kind: Kind; targetHours: number | null; days: Cell[]; locked: Record<number, ShiftCode> }
 export interface ScheduleDTO {
   id: string; serviceId: string; year: number; month: number; status: 'bor'|'pub'; ownerId: string; ownerName: string;
   coverage: Coverage; rules: Rules; seed: number; members: ScheduleMemberDTO[]; version: number;
@@ -130,12 +140,20 @@ export interface ImportPersonDTO {
   cells: string[];            // texto de cada día, tal como viene en el archivo
   codes: Cell[];              // cómo se leyó cada día (lo que no se entendió queda libre)
   warnings: string[];
+  hours: number | null;       // total de la columna HORAS del archivo, si la trae
   matchId: string | null;     // terapeuta del directorio que coincide, si hay una sola
   suggestions: { id: string; name: string }[]
 }
-export interface ImportTableDTO { id: string; sheet: string; headerRow: number; title: string; year: number | null; month: number | null; days: number; people: ImportPersonDTO[] }
+export interface ImportTableDTO {
+  id: string; sheet: string; headerRow: number; title: string; year: number | null; month: number | null; days: number; people: ImportPersonDTO[];
+  /** Servicio cuyo nombre coincide con el título o la hoja, si hay uno solo */
+  serviceId: string | null
+}
 export interface ImportPreviewDTO { tables: ImportTableDTO[] }
 export interface ImportResultDTO { schedule: ScheduleDTO; warnings: string[] }
+/** Resultado por tabla de una importación en lote: `schedule` si se creó, `error` si no */
+export interface ImportBatchItemDTO { index: number; schedule?: ScheduleDTO; warnings: string[]; error?: { code: string; message: string } }
+export interface ImportBatchResultDTO { results: ImportBatchItemDTO[] }
 
 /* ----- Resumen ----- */
 /** Un día del patrón: el código del turno o 'x' si ese día no hay cuadro. */

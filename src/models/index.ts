@@ -39,6 +39,7 @@ therapistSchema.index({ document: 1 }, { unique: true, partialFilterExpression: 
 const memberSchema = new Schema({
   therapistId: { type: oid, ref: 'Therapist', required: true },
   kind: { type: String, enum: ['fija', 'apoyo'], required: true }, // planta o apoyo EN ESTE cuadro
+  targetHours: { type: Number, min: 0, max: 744 }, // meta mensual fijada a mano; sin ella se reparte sola
   days: [{ type: String, enum: ['', ...SHIFT_CODES] }],
   locked: [{ _id: false, day: Number, code: { type: String, enum: SHIFT_CODES } }] // casillas fijadas a mano (day: 0 a n-1)
 }, { _id: false });

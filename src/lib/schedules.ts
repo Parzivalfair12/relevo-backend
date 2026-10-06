@@ -5,7 +5,7 @@ import { Schedule, Service, Therapist, User } from '../models/index.js';
 import { HttpError, type AuthUser } from '../middleware/index.js';
 
 /* ===== Tipos de trabajo (documentos "lean" de Mongo) ===== */
-export interface MemberDoc { therapistId: mongoose.Types.ObjectId; kind: Kind; days: Cell[]; locked: { day: number; code: Code }[] }
+export interface MemberDoc { therapistId: mongoose.Types.ObjectId; kind: Kind; targetHours?: number | null; days: Cell[]; locked: { day: number; code: Code }[] }
 export interface ScheduleDoc {
   _id: mongoose.Types.ObjectId; serviceId: mongoose.Types.ObjectId; year: number; month: number; status: 'bor' | 'pub';
   ownerId: mongoose.Types.ObjectId; updatedBy?: mongoose.Types.ObjectId; coverage: Coverage; rules: Rules; seed: number;
@@ -82,7 +82,7 @@ export function conflictIssues(s: ScheduleDoc, names: Map<string, string>, busy:
 }
 
 export function toConfig(s: ScheduleDoc, names: Map<string, string>, prev: Record<string, Cell[]>): Config {
-  const staff: Person[] = s.members.map(m => ({ id: idOf(m), name: names.get(idOf(m)) ?? 'Terapeuta eliminada', kind: m.kind }));
+  const staff: Person[] = s.members.map(m => ({ id: idOf(m), name: names.get(idOf(m)) ?? 'Terapeuta eliminada', kind: m.kind, targetHours: m.targetHours ?? null }));
   const locked: Config['locked'] = {};
   for (const m of s.members) locked[idOf(m)] = lockedOf(m);
   return { year: s.year, month: s.month, staff, cov: s.coverage, rules: s.rules, locked, seed: s.seed, prev };
@@ -131,7 +131,7 @@ export async function toDTO(s: ScheduleDoc): Promise<ScheduleDTO> {
     id: String(s._id), serviceId: String(s.serviceId), year: s.year, month: s.month, status: s.status,
     ownerId: String(s.ownerId), ownerName: userName(s.ownerId) ?? 'Usuario', updatedByName: userName(s.updatedBy),
     coverage: s.coverage, rules: s.rules, seed: s.seed, version: s.__v, prev: a.prev, busy: a.busy,
-    members: s.members.map(m => ({ therapistId: idOf(m), name: names.get(idOf(m)) ?? 'Terapeuta eliminada', kind: m.kind, days: m.days, locked: lockedOf(m) }))
+    members: s.members.map(m => ({ therapistId: idOf(m), name: names.get(idOf(m)) ?? 'Terapeuta eliminada', kind: m.kind, targetHours: m.targetHours ?? null, days: m.days, locked: lockedOf(m) }))
   };
 }
 

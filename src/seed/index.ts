@@ -31,5 +31,4 @@ await Schedule.insertMany(buildSeedSchedules().map(s => ({
 })));
 
 console.log(`Seed listo: ${SEED_USERS.length} usuarios, ${SEED_SERVICES.length} servicios, ${SEED_THERAPISTS.length} terapeutas, ${buildSeedSchedules().length} cuadros.`);
-console.log('Entra con admin@turnos.demo / admin123 o coordinadora@turnos.demo / coord123');
 await disconnectDb();

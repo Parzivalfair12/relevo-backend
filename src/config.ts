@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+/** Variable opcional: vacía (`CLAVE=`) cuenta como ausente */
+const opt = <T extends z.ZodTypeAny>(t: T) => z.preprocess(v => (v === '' ? undefined : v), t.optional());
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -14,7 +17,17 @@ const schema = z.object({
    * peticiones parecen venir de la misma IP y el límite de intentos por IP bloquearía a todos a la vez.
    */
   TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']).default('info')
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']).default('info'),
+  /**
+   * Cuentas que crea `npm run users:bootstrap` (sin borrar nada). Son opcionales: si falta alguna, esa cuenta no se crea.
+   * Las credenciales viven solo aquí, nunca en el código ni en la pantalla de inicio de sesión.
+   */
+  ADMIN_NAME: opt(z.string().trim().min(3)),
+  ADMIN_EMAIL: opt(z.string().trim().toLowerCase().email()),
+  ADMIN_PASSWORD: opt(z.string().min(12).max(128)),
+  SAVITRA_NAME: opt(z.string().trim().min(3)),
+  SAVITRA_EMAIL: opt(z.string().trim().toLowerCase().email()),
+  SAVITRA_PASSWORD: opt(z.string().min(12).max(128))
 });
 
 /** Falla al arrancar si falta alguna variable (mejor que fallar en mitad de una petición). */

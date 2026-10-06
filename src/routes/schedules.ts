@@ -1,9 +1,10 @@
 import express, { Router, type Request } from 'express';
 import mongoose from 'mongoose';
+import type { z } from 'zod';
 import { daysIn, type Cell, type Code } from '../engine/index.js';
 import {
-  absenceDeleteSchema, absenceInputSchema, cellsUpdateSchema, defaultCoverage, defaultRules, exportQuerySchema, generateSchema, importPreviewQuerySchema, importSchema,
-  MESES, newScheduleSchema, scheduleListQuerySchema, scheduleUpdateSchema, type Coverage, type ImportPreviewDTO, type ImportResultDTO
+  absenceDeleteSchema, absenceInputSchema, cellsUpdateSchema, defaultCoverage, defaultRules, exportQuerySchema, generateSchema, importBatchSchema, importPreviewQuerySchema, importSchema,
+  MESES, newScheduleSchema, scheduleListQuerySchema, scheduleUpdateSchema, type Coverage, type ImportBatchItemDTO, type ImportBatchResultDTO, type ImportPreviewDTO, type ImportResultDTO
 } from '../shared/index.js';
 import { config } from '../config.js';
 import { Schedule, Service, Therapist } from '../models/index.js';
@@ -102,37 +103,53 @@ schedules.post('/', h(async (req, res) => {
 }));
 
 /**
- * Importar un cuadro del hospital (.xlsx u .ods) en dos pasos:
+ * Importar cuadros del hospital (.xlsx u .ods) en dos pasos:
  *   1. /import/preview recibe el archivo tal cual y devuelve las tablas que encontró, con cómo leyó cada casilla
  *      y qué terapeuta del directorio le corresponde a cada nombre. No guarda nada.
  *   2. /import recibe lo que la usuaria confirmó y crea el cuadro en borrador, con lo importado fijado a mano.
  */
+/** Quita tildes, mayúsculas y signos para comparar el nombre de un servicio con el título de una hoja */
+const plain = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+
 schedules.post('/import/preview', heavy, express.raw({ type: () => true, limit: MAX_FILE_BYTES }), h(async (req, res) => {
   const { serviceId } = parse(importPreviewQuerySchema, req.query);
-  assertAccess(req.user!, serviceId);
+  if (serviceId) assertAccess(req.user!, serviceId);
   if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw new HttpError(400, 'VALIDATION', 'Sube un archivo .xlsx o .ods.');
   let tables;
   try { tables = parseWorkbook(req.body); } catch (e) { if (e instanceof ImportError) throw new HttpError(400, 'IMPORT_UNREADABLE', e.message); throw e; }
   if (!tables.length) throw new HttpError(400, 'IMPORT_EMPTY', 'No encontré ninguna tabla de turnos. Busco una fila «FECHA» seguida de los días 1, 2, 3… y debajo una fila por persona.');
   const active = (await Therapist.find({ active: true }).select('name serviceIds').sort({ name: 1 }).lean()) as unknown as { _id: unknown; name: string; serviceIds: unknown[] }[];
-  const mine = active.filter(t => t.serviceIds.map(String).includes(serviceId)).map(t => ({ id: String(t._id), name: t.name }));
   const all = active.map(t => ({ id: String(t._id), name: t.name }));
+  // Solo los servicios a los que la usuaria tiene acceso
+  const services = ((await Service.find().select('name').lean()) as unknown as { _id: unknown; name: string }[])
+    .filter(sv => req.user!.role === 'admin' || req.user!.serviceIds.includes(String(sv._id)))
+    .map(sv => ({ id: String(sv._id), key: plain(sv.name) }));
+  const serviceOf = (t: { sheet: string; title: string }): string | null => {
+    if (serviceId) return serviceId;
+    const hay = plain(`${t.title} ${t.sheet}`);
+    const hits = services.filter(sv => sv.key && hay.includes(sv.key));
+    return hits.length === 1 ? hits[0].id : null;
+  };
   const body: ImportPreviewDTO = {
-    tables: tables.map(t => ({
-      ...t,
-      people: t.people.map(p => {
-        const n = normalizeCells(p.cells, t.days);
-        // Primero entre las terapeutas del servicio; si no hay coincidencia, en todo el directorio
-        const own = matchName(p.name, mine), m = own.matchId ? own : matchName(p.name, all);
-        return { ...p, codes: n.codes, warnings: n.warnings, matchId: m.matchId, suggestions: m.suggestions };
-      })
-    }))
+    tables: tables.map(t => {
+      const sid = serviceOf(t);
+      // Primero entre las terapeutas del servicio (si se conoce); si no hay coincidencia, en todo el directorio
+      const mine = sid ? active.filter(x => x.serviceIds.map(String).includes(sid)).map(x => ({ id: String(x._id), name: x.name })) : [];
+      return {
+        ...t, serviceId: sid,
+        people: t.people.map(p => {
+          const n = normalizeCells(p.cells, t.days);
+          const own = matchName(p.name, mine), m = own.matchId ? own : matchName(p.name, all);
+          return { ...p, codes: n.codes, warnings: n.warnings, matchId: m.matchId, suggestions: m.suggestions };
+        })
+      };
+    })
   };
   res.json(body);
 }));
 
-schedules.post('/import', heavy, h(async (req, res) => {
-  const d = parse(importSchema, req.body);
+/** Crea un cuadro en borrador con lo que la usuaria confirmó. Lo comparten /import y /import/batch. */
+async function createImported(req: Request, d: z.infer<typeof importSchema>): Promise<ImportResultDTO> {
   assertAccess(req.user!, d.serviceId);
   const service: any = await Service.findById(d.serviceId).lean();
   if (!service) throw new HttpError(400, 'VALIDATION', 'El servicio no existe.');
@@ -147,7 +164,7 @@ schedules.post('/import', heavy, h(async (req, res) => {
   const members: MemberDoc[] = d.members.map(m => {
     const t = found.find(x => String(x._id) === m.therapistId)!, row = normalizeCells(m.cells, n);
     row.warnings.forEach(w => warnings.push(`${t.name}: ${w}`));
-    return { therapistId: t._id, kind: t.defaultKind, days: row.codes as Cell[], locked: Object.entries(row.locked).map(([day, code]) => ({ day: Number(day), code })) };
+    return { therapistId: t._id, kind: m.kind ?? t.defaultKind, targetHours: m.targetHours ?? null, days: row.codes as Cell[], locked: Object.entries(row.locked).map(([day, code]) => ({ day: Number(day), code })) };
   });
   const coverage: Coverage = { ...defaultCoverage(), ...(service.defaultCoverage ?? {}) };
   const draft = { _id: new mongoose.Types.ObjectId(), serviceId: new mongoose.Types.ObjectId(d.serviceId), year: d.year, month: d.month, status: 'bor' as const, ownerId: new mongoose.Types.ObjectId(req.user!.id), coverage, rules: defaultRules(), seed: 3, __v: 0, members } as ScheduleDoc;
@@ -158,12 +175,30 @@ schedules.post('/import', heavy, h(async (req, res) => {
       coverage, rules: draft.rules, seed: draft.seed, members, stats: statsFrom(analyze(normalize(draft), names, near, serviceNames))
     });
     await audit(req, 'import', 'schedule', created._id, `Importó el cuadro de ${service.name} ${d.month + 1}/${d.year} (${members.length} personas${warnings.length ? `, ${warnings.length} casillas sin entender` : ''})`);
-    const body: ImportResultDTO = { schedule: await toDTO((await Schedule.findById(created._id).lean()) as unknown as ScheduleDoc), warnings };
-    res.status(201).json(body);
+    return { schedule: await toDTO((await Schedule.findById(created._id).lean()) as unknown as ScheduleDoc), warnings };
   } catch (e) {
     if ((e as { code?: number }).code === 11000) throw dup();
     throw e;
   }
+}
+
+schedules.post('/import', heavy, h(async (req, res) => {
+  res.status(201).json(await createImported(req, parse(importSchema, req.body)));
+}));
+
+/** Varias tablas del archivo de una vez. No es todo o nada: cada tabla responde por separado (un duplicado no frena las demás). */
+schedules.post('/import/batch', heavy, h(async (req, res) => {
+  const { tables } = parse(importBatchSchema, req.body);
+  const results: ImportBatchItemDTO[] = [];
+  for (const [index, t] of tables.entries()) {
+    try { results.push({ index, ...(await createImported(req, t)) }); }
+    catch (e) {
+      if (!(e instanceof HttpError) || e.status >= 500) throw e;
+      results.push({ index, warnings: [], error: { code: e.code, message: e.message } });
+    }
+  }
+  const body: ImportBatchResultDTO = { results };
+  res.status(201).json(body);
 }));
 
 /** Descarga el cuadro en el formato del hospital: xlsx (Excel) u ods (LibreOffice). */
@@ -216,7 +251,8 @@ schedules.patch('/:id', regen, h(async (req, res) => {
     }
     members = body.team.map(t => {
       const old = members.find(m => String(m.therapistId) === t.therapistId);
-      return old ? { ...old, kind: t.kind } : { therapistId: new mongoose.Types.ObjectId(t.therapistId), kind: t.kind, days: [], locked: [] };
+      const targetHours = t.targetHours === undefined ? old?.targetHours ?? null : t.targetHours; // sin el campo se conserva la meta
+      return old ? { ...old, kind: t.kind, targetHours } : { therapistId: new mongoose.Types.ObjectId(t.therapistId), kind: t.kind, targetHours, days: [], locked: [] };
     });
     regen = true;
   }

@@ -9,7 +9,8 @@ import { MESES } from '../shared/index.js';
  *   · el mes y el año en el encabezado («NEIVA, SEPTIEMBRE 2026») o, si no, en el nombre de la hoja («MAYO_2025»).
  * Las ausencias que el hospital escribe letra por letra en días seguidos («PE R MI S O») se juntan en una sola.
  */
-export interface ParsedPerson { name: string; row: number; cells: string[] }
+/** hours: total de la columna HORAS del archivo (informativo: sirve de meta inicial), null si no la trae */
+export interface ParsedPerson { name: string; row: number; cells: string[]; hours: number | null }
 export interface ParsedTable { id: string; sheet: string; headerRow: number; title: string; year: number | null; month: number | null; days: number; people: ParsedPerson[] }
 
 const MAX_BYTES = 8 * 1024 * 1024, MAX_ROWS = 1200, MAX_PEOPLE = 80;
@@ -78,7 +79,8 @@ export function parseWorkbook(buf: Buffer): ParsedTable[] {
       }
     }
   }
-  return tables.filter(t => t.people.length > 0);
+  // Se descartan las plantillas: tablas sin una sola casilla escrita
+  return tables.filter(t => t.people.some(p => p.cells.some(c => c !== '')));
 }
 
 function readTable(rows: unknown[][], sheet: string, hr: number, nameCol: number, days: number, sheetDate: { month: number; year: number } | null, idx: number): ParsedTable {
@@ -88,6 +90,9 @@ function readTable(rows: unknown[][], sheet: string, hr: number, nameCol: number
   const date = above.map(monthYear).find(Boolean) ?? sheetDate;
   const title = above.slice(0, 3).reverse().join(' · ') || sheet;
 
+  // Columna «HORAS» de la fila de encabezado, si existe
+  const hoursCol = (rows[hr] ?? []).findIndex((v, i) => i > nameCol && letters(text(v)) === 'HORAS');
+  const hoursOf = (row: unknown[]): number | null => { const v = hoursCol >= 0 ? Number(row?.[hoursCol]) : NaN; return Number.isFinite(v) && text(row?.[hoursCol]) !== '' ? v : null; };
   const dayCells = (row: unknown[]) => Array.from({ length: days }, (_, i) => row?.[nameCol + 1 + i]);
   const people: ParsedPerson[] = [];
   const hasText = (row: unknown[]) => dayCells(row).some(v => text(v) !== '' && typeof v !== 'number');
@@ -99,7 +104,8 @@ function readTable(rows: unknown[][], sheet: string, hr: number, nameCol: number
     if (STOP.some(s => letters(name).startsWith(s))) break;    // «TOTAL DE HORAS», «CONVENCIONES», otra tabla…
     if (!name) { r -= 1; continue; }                           // fila suelta sin nombre: se salta una y se reintenta
     const codesRow = hasText(a) ? a : hasText(b) ? b : a;
-    people.push({ name: name.replace(/\s+/g, ' '), row: r + 1, cells: dayCells(codesRow).map(v => (typeof v === 'number' ? String(v) : text(v))) });
+    const other = codesRow === a ? b : a;
+    people.push({ name: name.replace(/\s+/g, ' '), row: r + 1, cells: dayCells(codesRow).map(v => (typeof v === 'number' ? String(v) : text(v))), hours: hoursOf(other) ?? hoursOf(codesRow) });
   }
   return { id: `${idx}`, sheet, headerRow: hr + 1, title, year: date?.year ?? null, month: date?.month ?? null, days, people };
 }
