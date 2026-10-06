@@ -7,7 +7,7 @@ const xlEdge = (e: Edge): Partial<ExcelJS.Border> | undefined => (e ? { style: e
 
 export async function toXlsx(layout: Layout): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'Turnos Respiratoria'; wb.created = new Date();
+  wb.creator = 'Relevo'; wb.created = new Date();
   const ws = wb.addWorksheet(layout.sheetName, {
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 5 }, // oficio, ajustado al ancho
     views: [{ showGridLines: false }]
@@ -95,7 +95,7 @@ export async function toOds(layout: Layout): Promise<Buffer> {
     // Hoja horizontal tamaño oficio, ajustada a una página de ancho
     `<office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="35.56cm" fo:page-height="21.59cm" style:print-orientation="landscape" fo:margin-left="1cm" fo:margin-right="1cm" fo:margin-top="1cm" fo:margin-bottom="1cm" style:scale-to-X="1" style:scale-to-Y="0"/></style:page-layout></office:automatic-styles>` +
     `<office:master-styles><style:master-page style:name="Default" style:page-layout-name="pm1"/></office:master-styles></office:document-styles>`;
-  const meta = `<?xml version="1.0" encoding="UTF-8"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2"><office:meta><meta:generator>Turnos Respiratoria</meta:generator><meta:creation-date>${new Date().toISOString()}</meta:creation-date></office:meta></office:document-meta>`;
+  const meta = `<?xml version="1.0" encoding="UTF-8"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2"><office:meta><meta:generator>Relevo</meta:generator><meta:creation-date>${new Date().toISOString()}</meta:creation-date></office:meta></office:document-meta>`;
   const manifest = `<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">` +
     `<manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>` +
     ['content.xml', 'styles.xml', 'meta.xml'].map(f => `<manifest:file-entry manifest:full-path="${f}" manifest:media-type="text/xml"/>`).join('') + `</manifest:manifest>`;

@@ -1,4 +1,4 @@
-# Turnos Respiratoria · backend
+# Relevo · backend
 
 API de los cuadros de turnos mensuales para terapeutas respiratorias: cuentas y roles, servicios, directorio, cuadros con editor, resumen y Excel/ODS. Aquí vive también el **motor de turnos** y los **esquemas Zod**, fuente única que el frontend copia con un script.
 
