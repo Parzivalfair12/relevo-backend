@@ -124,6 +124,19 @@ const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'El período debe 
 export const dashboardQuerySchema = z.object({ service: objectId.optional(), from: yearMonth.optional(), to: yearMonth.optional() })
   .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'El período inicial no puede ser posterior al final.', path: ['to'] });
 
+/* ----- Auditoría (solo administradores) ----- */
+export const AUDIT_ACTIONS = ['create', 'update', 'delete', 'approve', 'export', 'import', 'password', 'unlock'] as const;
+export const AUDIT_ENTITIES = ['user', 'service', 'therapist', 'schedule'] as const;
+const isoDateTime = z.string().datetime({ offset: true, message: 'La fecha no es válida.' });
+export const auditQuerySchema = z.object({
+  entity: z.enum(AUDIT_ENTITIES).optional(), action: z.enum(AUDIT_ACTIONS).optional(), user: objectId.optional(),
+  /** Rango de fechas (inclusive), en ISO con zona: la web manda el inicio y el fin del día de la usuaria */
+  from: isoDateTime.optional(), to: isoDateTime.optional(),
+  /** Texto que debe aparecer en el detalle */
+  q: z.string().trim().max(100).optional(),
+  cursor: z.string().max(80).optional(), limit: z.coerce.number().int().min(1).max(200).default(50)
+}).refine(a => !a.from || !a.to || a.from <= a.to, { message: 'La fecha inicial no puede ser posterior a la final.', path: ['to'] });
+
 /* ===== Tipos de respuesta de la API ===== */
 /** `lockedUntil`: fecha ISO hasta la que la cuenta está bloqueada por intentos fallidos; null si no lo está */
 export interface UserDTO { id: string; name: string; email: string; role: Role; status: 'activo'|'pendiente'; serviceIds: string[]; lockedUntil: string | null }
@@ -156,6 +169,13 @@ export interface NewScheduleProposalDTO {
   /** Ya existe un cuadro de ese servicio y mes */
   exists: boolean; hasPrevious: boolean; days: number; coverage: Coverage; options: NewScheduleOptionDTO[];
 }
+/** Una línea del registro de auditoría; `userName` es null si la persona ya no existe */
+export interface AuditEntryDTO {
+  id: string; at: string; userId: string | null; userName: string | null;
+  action: (typeof AUDIT_ACTIONS)[number]; entity: (typeof AUDIT_ENTITIES)[number]; entityId: string | null; summary: string;
+}
+/** Una página del registro, de lo más reciente a lo más antiguo; `nextCursor` es null cuando no hay más */
+export interface AuditPageDTO { items: AuditEntryDTO[]; nextCursor: string | null; retentionDays: number }
 /** Cuerpo de un 409 por versión: quién hizo el último cambio y la versión actual */
 export interface VersionConflictDetails { updatedByName?: string; version: number }
 /* ----- Importar un cuadro ----- */

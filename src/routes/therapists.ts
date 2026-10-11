@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { kindSchema, therapistInputSchema } from '../shared/index.js';
 import { Schedule, Therapist } from '../models/index.js';
 import { HttpError, authenticate, requireRole } from '../middleware/index.js';
-import { checkServices, ci, h, idParam, notId, parse } from '../lib/http.js';
+import { checkServices, ci, escapeRe, h, idParam, notId, parse } from '../lib/http.js';
 import { therapistDTO } from '../lib/dto.js';
 import { audit } from '../lib/audit.js';
 
@@ -17,7 +17,6 @@ const querySchema = z.object({
   kind: kindSchema.optional(),
   active: z.enum(['true', 'false']).optional()
 });
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Cuántos cuadros incluyen a cada terapeuta (el directorio lo muestra en la columna "Cuadros"). */
 async function scheduleCounts(ids?: unknown[]): Promise<Map<string, number>> {

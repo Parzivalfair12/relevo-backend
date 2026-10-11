@@ -1,5 +1,6 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
 import { SHIFT_CODES } from '../shared/index.js';
+import { config } from '../config.js';
 
 const oid = Schema.Types.ObjectId;
 
@@ -72,6 +73,10 @@ const auditSchema = new Schema({
   createdAt: { type: Date, default: Date.now }
 });
 auditSchema.index({ entity: 1, entityId: 1, createdAt: -1 });
+auditSchema.index({ createdAt: -1, _id: -1 }); // la pantalla de auditoría pagina de la más reciente a la más antigua
+auditSchema.index({ userId: 1, createdAt: -1 });
+// Plazo de conservación: con AUDIT_RETENTION_DAYS > 0, MongoDB borra solo los registros más viejos (syncIndexes lo aplica al arrancar)
+if (config.AUDIT_RETENTION_DAYS > 0) auditSchema.index({ createdAt: 1 }, { expireAfterSeconds: config.AUDIT_RETENTION_DAYS * 86_400 });
 
 export type UserDoc = InferSchemaType<typeof userSchema>;
 export const User = mongoose.models.User || mongoose.model('User', userSchema);

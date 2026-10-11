@@ -6,6 +6,7 @@ import { services } from './services.js';
 import { therapists } from './therapists.js';
 import { schedules } from './schedules.js';
 import { dashboard } from './dashboard.js';
+import { audit } from './audit.js';
 
 /** Todas las rutas cuelgan de /api/v1, una carpeta de rutas por grupo del plan. Las de Excel y ODS llegan en la fase 5. */
 export const api = Router();
@@ -28,3 +29,6 @@ api.use('/schedules', schedules);
 
 // Fase 4 · resumen
 api.use('/dashboard', dashboard);
+
+// Auditoría (solo administradores, de solo lectura)
+api.use('/audit', audit);

@@ -40,7 +40,7 @@ docker compose --env-file .env.production --profile app up -d --build   # MongoD
 - **`--env-file .env.production` es obligatorio** para esto: sin él Compose lee el `.env` de desarrollo.
 - La API **se niega a arrancar en producción** con secretos de ejemplo, repetidos o cortos, o con orígenes CORS sin https (solo `localhost` puede ir con http).
 - Corre sin privilegios, con el sistema de archivos de solo lectura, y la web (Nginx) es lo único que se expone.
-- Variables: `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` (aleatorios ≥ 32 caracteres, distintos), `CORS_ORIGIN` (dirección de la web), `EXPORT_CITY`, `TRUST_PROXY` (cuántos proxies hay delante; el compose pone 1), `LOG_LEVEL`.
+- Variables: `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET` (aleatorios ≥ 32 caracteres, distintos), `CORS_ORIGIN` (dirección de la web), `EXPORT_CITY`, `AUDIT_RETENTION_DAYS` (días que se conservan los registros de auditoría; 0 = para siempre), `TRUST_PROXY` (cuántos proxies hay delante; el compose pone 1), `LOG_LEVEL`.
 - **MongoDB de este compose no pide usuario ni contraseña** (está solo en `127.0.0.1`). En producción usa MongoDB Atlas o un servidor propio con autenticación y copias automáticas.
 
 ## Comandos

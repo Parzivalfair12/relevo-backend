@@ -18,6 +18,8 @@ export function idParam(req: Request, name = 'id'): string {
 }
 
 /** Comparación de nombres sin distinguir mayúsculas ni tildes (igual que el directorio del mockup). */
+/** Escapa un texto para usarlo literal dentro de una expresión regular */
+export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export const ci = { locale: 'es', strength: 2 } as const;
 
 /** Condición `distinto de` para filtros: con sanitizeFilter activo, los operadores `$` deben marcarse como confiables. */

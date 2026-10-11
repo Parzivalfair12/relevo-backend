@@ -8,7 +8,8 @@ export default defineConfig({
       MONGO_URI: 'mongodb://127.0.0.1:27018/turnos_test?replicaSet=rs0&directConnection=true',
       JWT_ACCESS_SECRET: 'test-access-secret-test-access-secret-0123',
       JWT_REFRESH_SECRET: 'test-refresh-secret-test-refresh-secret-0123',
-      CORS_ORIGIN: 'http://localhost:5173'
+      CORS_ORIGIN: 'http://localhost:5173',
+      AUDIT_RETENTION_DAYS: '400'
     },
     fileParallelism: false,
     testTimeout: 20000

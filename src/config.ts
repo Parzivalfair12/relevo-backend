@@ -17,6 +17,11 @@ const schema = z.object({
    * peticiones parecen venir de la misma IP y el límite de intentos por IP bloquearía a todos a la vez.
    */
   TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
+  /**
+   * Días que se conservan los registros de auditoría; al vencer, MongoDB los borra solo (índice TTL).
+   * 0 = no se borran nunca. El plazo lo define el hospital con su área jurídica (Ley 1581 de 2012).
+   */
+  AUDIT_RETENTION_DAYS: z.coerce.number().int().min(0).max(36500).default(0),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']).default('info'),
   /**
    * Cuentas que crea `npm run users:bootstrap` (sin borrar nada). Son opcionales: si falta alguna, esa cuenta no se crea.
