@@ -4,12 +4,13 @@ import type { z } from 'zod';
 import { daysIn, type Cell, type Code } from '../engine/index.js';
 import {
   absenceDeleteSchema, absenceInputSchema, cellsUpdateSchema, defaultCoverage, defaultRules, exportQuerySchema, generateSchema, importBatchSchema, importPreviewQuerySchema, importSchema,
-  MESES, newScheduleSchema, scheduleListQuerySchema, scheduleUpdateSchema, type Coverage, type ImportBatchItemDTO, type ImportBatchResultDTO, type ImportPreviewDTO, type ImportResultDTO
+  MESES, newScheduleProposalQuerySchema, newScheduleSchema, scheduleListQuerySchema, scheduleUpdateSchema, type Coverage, type ImportBatchItemDTO, type ImportBatchResultDTO, type ImportPreviewDTO, type ImportResultDTO,
+  type NewScheduleOptionDTO, type NewScheduleProposalDTO
 } from '../shared/index.js';
 import { config } from '../config.js';
 import { Schedule, Service, Therapist } from '../models/index.js';
 import { HttpError, authenticate } from '../middleware/index.js';
-import { h, idParam, parse } from '../lib/http.js';
+import { h, idParam, notId, parse } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { heavy, regen } from '../lib/limits.js';
 import { toOds, toXlsx } from '../lib/export-files.js';
@@ -57,9 +58,55 @@ schedules.get('/', h(async (req, res) => {
   res.json(await summaries(all, visible));
 }));
 
+const previousOf = async (serviceId: string, year: number, month: number) => {
+  const [py, pm] = monthBefore(year, month);
+  return (await Schedule.findOne({ serviceId, year: py, month: pm }).lean()) as unknown as ScheduleDoc | null;
+};
+/** Quienes de ese equipo siguen activas */
+const stillActive = async (ids: unknown[]) =>
+  new Set((await Therapist.find({ _id: mongoose.trusted({ $in: ids }), active: true }).select('_id').lean()).map((t: any) => String(t._id)));
+
 /**
- * Crear un cuadro: toma el equipo del mes anterior del servicio (solo quienes siguen activas) o, si no hay,
- * las terapeutas activas del servicio; copia la cobertura y continúa la secuencia del mes anterior.
+ * Propuesta para crear un cuadro: todas las terapeutas activas del directorio, con la casilla marcada para quienes entrarían
+ * sin elegir nada (el equipo del mes anterior, o las activas del servicio si no hay), su tipo y meta del mes anterior, y los
+ * otros servicios donde ya están ese mes. Es lo que muestra el diálogo «Nuevo cuadro» para que la usuaria lo revise.
+ */
+schedules.get('/proposal', h(async (req, res) => {
+  const q = parse(newScheduleProposalQuerySchema, req.query);
+  assertAccess(req.user!, q.serviceId);
+  const service: any = await Service.findById(q.serviceId).lean();
+  if (!service) throw new HttpError(400, 'VALIDATION', 'El servicio no existe.');
+  const [prev, exists, directory, others, serviceNames] = await Promise.all([
+    previousOf(q.serviceId, q.year, q.month),
+    Schedule.exists({ serviceId: q.serviceId, year: q.year, month: q.month }),
+    Therapist.find({ active: true }).sort({ name: 1 }).lean(),
+    Schedule.find({ year: q.year, month: q.month, serviceId: notId(q.serviceId) }).select('serviceId members.therapistId').lean(),
+    serviceNameMap()
+  ]);
+  const prevBy = new Map((prev?.members ?? []).map(m => [String(m.therapistId), m]));
+  const elsewhere = new Map<string, string[]>();
+  for (const o of others as any[]) for (const m of o.members) {
+    const key = String(m.therapistId), name = serviceNames.get(String(o.serviceId)) ?? '';
+    elsewhere.set(key, [...(elsewhere.get(key) ?? []), name]);
+  }
+  const options: NewScheduleOptionDTO[] = (directory as any[]).map(t => {
+    const id = String(t._id), inService = (t.serviceIds ?? []).some((x: unknown) => String(x) === q.serviceId), old = prevBy.get(id);
+    return {
+      therapistId: id, name: t.name, inService, selected: prev ? !!old : inService,
+      kind: old?.kind ?? t.defaultKind, targetHours: old?.targetHours ?? null, elsewhere: elsewhere.get(id) ?? []
+    };
+  });
+  const body: NewScheduleProposalDTO = {
+    exists: !!exists, hasPrevious: !!prev, days: daysIn(q.year, q.month),
+    coverage: prev?.coverage ?? { ...defaultCoverage(), ...(service.defaultCoverage ?? {}) }, options
+  };
+  res.json(body);
+}));
+
+/**
+ * Crear un cuadro. Sin `team`: toma el equipo del mes anterior del servicio (solo quienes siguen activas) o, si no hay,
+ * las terapeutas activas del servicio. Con `team`: el equipo, el tipo y la meta de horas que la usuaria eligió.
+ * Copia la cobertura y continúa la secuencia del mes anterior.
  */
 schedules.post('/', h(async (req, res) => {
   const d = parse(newScheduleSchema, req.body);
@@ -69,11 +116,16 @@ schedules.post('/', h(async (req, res) => {
   const dup = () => new HttpError(409, 'DUPLICATE', 'Ya existe un cuadro de este servicio en ese mes.');
   if (await Schedule.exists({ serviceId: d.serviceId, year: d.year, month: d.month })) throw dup();
 
-  const [py, pm] = monthBefore(d.year, d.month);
-  const prev = (await Schedule.findOne({ serviceId: d.serviceId, year: py, month: pm }).lean()) as unknown as ScheduleDoc | null;
-  let team: { therapistId: mongoose.Types.ObjectId; kind: 'fija' | 'apoyo' }[];
-  if (prev) {
-    const active = new Set((await Therapist.find({ _id: mongoose.trusted({ $in: prev.members.map(m => m.therapistId) }), active: true }).select('_id').lean()).map((t: any) => String(t._id)));
+  const prev = await previousOf(d.serviceId, d.year, d.month);
+  let team: { therapistId: mongoose.Types.ObjectId; kind: 'fija' | 'apoyo'; targetHours?: number | null }[];
+  if (d.team) {
+    const ids = d.team.map(t => t.therapistId);
+    if (new Set(ids).size !== ids.length) throw new HttpError(400, 'VALIDATION', 'Hay terapeutas repetidas en el equipo.');
+    if ((await stillActive(ids)).size !== ids.length) throw new HttpError(400, 'VALIDATION', 'Alguna terapeuta no existe o está inactiva.');
+    // la meta fija solo vale para el personal de planta: el apoyo completa lo que falta
+    team = d.team.map(t => ({ therapistId: new mongoose.Types.ObjectId(t.therapistId), kind: t.kind, targetHours: t.kind === 'fija' ? t.targetHours ?? null : null }));
+  } else if (prev) {
+    const active = await stillActive(prev.members.map(m => m.therapistId));
     team = prev.members.filter(m => active.has(String(m.therapistId))).map(m => ({ therapistId: m.therapistId, kind: m.kind }));
   } else {
     team = (await Therapist.find({ serviceIds: d.serviceId, active: true }).sort({ _id: 1 }).lean()).map((t: any) => ({ therapistId: t._id, kind: t.defaultKind }));
@@ -94,7 +146,8 @@ schedules.post('/', h(async (req, res) => {
       serviceId: draft.serviceId, year: d.year, month: d.month, status: 'bor', ownerId: draft.ownerId, updatedBy: draft.ownerId,
       coverage, rules: draft.rules, seed: draft.seed, members: draft.members, stats: statsFrom(analyze(draft, names, near, serviceNames))
     });
-    await audit(req, 'create', 'schedule', created._id, `Creó el cuadro de ${service.name} ${d.month + 1}/${d.year}${prev ? ' continuando el mes anterior' : ''}`);
+    const metas = [...new Set(team.filter(t => t.targetHours != null).map(t => t.targetHours))];
+    await audit(req, 'create', 'schedule', created._id, `Creó el cuadro de ${service.name} ${d.month + 1}/${d.year}${prev ? ' continuando el mes anterior' : ''}${d.team ? `, con el equipo elegido (${team.length})${metas.length ? ` y meta de ${metas.join('/')} h` : ''}` : ''}`);
     res.status(201).json(await toDTO((await Schedule.findById(created._id).lean()) as unknown as ScheduleDoc));
   } catch (e) {
     if ((e as { code?: number }).code === 11000) throw dup(); // otra petición lo creó a la vez

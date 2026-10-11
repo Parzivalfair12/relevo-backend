@@ -64,6 +64,64 @@ describe('crear cuadros', () => {
   });
 });
 
+describe('crear con equipo y meta elegidos', () => {
+  const proposal = (token: string, serviceId: unknown, year: number, month: number) =>
+    request(app).get(api('/schedules/proposal')).query({ serviceId: String(serviceId), year, month }).set(authed(token));
+  const opt = (body: any, t: any) => body.options.find((o: any) => o.therapistId === String(t._id));
+  const team = (rows: [any, 'fija' | 'apoyo', number?][]) => rows.map(([t, kind, targetHours]) => ({ therapistId: String(t._id), kind, ...(targetHours === undefined ? {} : { targetHours }) }));
+
+  it('la propuesta marca el equipo del mes anterior, deja ver al resto del directorio y no incluye a las inactivas', async () => {
+    const r = await proposal(coord, fx.uci._id, 2027, 0); // diciembre de 2026 de la UCI quedó sin Cira Tres
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ exists: false, hasPrevious: true, days: 31, coverage: { M: 1, T: 1, N: 1 } });
+    expect(opt(r.body, uciTeam[1])).toMatchObject({ name: 'Ana Uno', inService: true, selected: true, kind: 'fija', targetHours: null, elsewhere: [] });
+    expect(opt(r.body, uciTeam[3])).toMatchObject({ inService: true, selected: false });
+    expect(opt(r.body, hosTeam[1])).toMatchObject({ inService: false, selected: false });
+    expect(r.body.options.some((o: any) => o.name === 'Inactiva Vieja')).toBe(false);
+  });
+  it('sin mes anterior propone las activas del servicio, y avisa si ya existe el cuadro', async () => {
+    const r = await proposal(admin, fx.hos._id, 2028, 3);
+    expect(r.body.hasPrevious).toBe(false);
+    expect(r.body.options.filter((o: any) => o.selected).map((o: any) => o.name).sort()).toEqual(['Compartida Díaz', 'Eva Hos']);
+    expect((await proposal(coord, fx.uci._id, 2026, 9)).body.exists).toBe(true);
+  });
+  it('crea con el equipo y la meta elegidos: la meta solo vale para planta', async () => {
+    const r = await request(app).post(api('/schedules')).set(authed(coord)).send({
+      serviceId: String(fx.uci._id), year: 2028, month: 0,
+      team: team([[uciTeam[1], 'fija', 100], [uciTeam[2], 'fija', 100], [uciTeam[3], 'fija'], [uciTeam[4], 'apoyo', 80]])
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.members.map((m: any) => m.name).sort()).toEqual(['Ana Uno', 'Bea Dos', 'Cira Tres', 'Dora Apoyo']);
+    expect(member(r.body, uciTeam[1]._id)).toMatchObject({ kind: 'fija', targetHours: 100 });
+    expect(member(r.body, uciTeam[3]._id).targetHours).toBeNull();
+    expect(member(r.body, uciTeam[4]._id)).toMatchObject({ kind: 'apoyo', targetHours: null });
+    expect(r.body.members.every((m: any) => m.days.length === 31 && m.days.every((c: string) => c !== ''))).toBe(true);
+    expect(await AuditLog.countDocuments({ summary: /equipo elegido \(4\) y meta de 100 h/ })).toBe(1);
+  });
+  it('el mes siguiente propone la meta del mes anterior y ve quién ya está en otro servicio', async () => {
+    await request(app).post(api('/schedules')).set(authed(admin)).send({ serviceId: String(fx.hos._id), year: 2028, month: 0, team: team([[shared, 'fija', 120], [hosTeam[1], 'fija', 120]]) });
+    const feb = await proposal(coord, fx.uci._id, 2028, 1);
+    expect(opt(feb.body, uciTeam[1])).toMatchObject({ selected: true, targetHours: 100 });
+    const jan = await proposal(coord, fx.uci._id, 2028, 0);
+    expect(jan.body.exists).toBe(true);
+    expect(opt(jan.body, shared).elsewhere).toEqual(['Hospitalización']);
+  });
+  it('rechaza equipos repetidos, con inactivas, de menos de 2 o con metas fuera de rango', async () => {
+    const bad = (t: unknown) => request(app).post(api('/schedules')).set(authed(admin)).send({ serviceId: String(fx.uci._id), year: 2028, month: 5, team: t });
+    expect((await bad(team([[uciTeam[1], 'fija'], [uciTeam[1], 'fija']]))).body.message).toMatch(/repetidas/);
+    const inactiva = await Therapist.findOne({ name: 'Inactiva Vieja' });
+    expect((await bad(team([[uciTeam[1], 'fija'], [inactiva, 'fija']]))).body.message).toMatch(/inactiva/);
+    expect((await bad(team([[uciTeam[1], 'fija']]))).status).toBe(400);
+    expect((await bad(team([[uciTeam[1], 'fija', 745], [uciTeam[2], 'fija']]))).status).toBe(400);
+    expect(await Schedule.countDocuments({ serviceId: fx.uci._id, year: 2028, month: 5 })).toBe(0);
+  });
+  it('la coordinadora no pide propuestas ni crea cuadros de servicios ajenos (403)', async () => {
+    expect((await proposal(coord, fx.hos._id, 2028, 4)).status).toBe(403);
+    const r = await request(app).post(api('/schedules')).set(authed(coord)).send({ serviceId: String(fx.hos._id), year: 2028, month: 4, team: team([[shared, 'fija'], [hosTeam[1], 'fija']]) });
+    expect(r.status).toBe(403);
+  });
+});
+
 describe('permisos por servicio', () => {
   it('la coordinadora no crea ni abre cuadros de servicios que no tiene (403)', async () => {
     expect((await create(coord, fx.hos._id, 2027, 0)).status).toBe(403);

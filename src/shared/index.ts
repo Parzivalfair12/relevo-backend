@@ -60,7 +60,14 @@ export const userInputSchema = z.object({
   email, role: roleSchema, serviceIds: z.array(objectId)
 }).refine(u => u.role === 'admin' || u.serviceIds.length > 0, { message: 'Asigna al menos un servicio.', path: ['serviceIds'] });
 export const userCreateSchema = userInputSchema.and(z.object({ password }));
-export const newScheduleSchema = z.object({ serviceId: objectId, year: z.number().int().min(2024).max(2100), month: z.number().int().min(0).max(11) });
+/** Meta mensual de horas por persona (un mes tiene como máximo 744 h) */
+export const targetHoursSchema = z.number().min(0).max(744);
+/** Equipo de un cuadro: quién entra, si es de planta o apoyo y su meta mensual (sin meta se reparte sola) */
+export const teamInputSchema = z.array(z.object({ therapistId: objectId, kind: kindSchema, targetHours: targetHoursSchema.nullable().optional() }))
+  .min(2, 'Se necesitan al menos 2 terapeutas').max(60);
+/** `team` es opcional: sin él se usa el equipo del mes anterior (o las terapeutas activas del servicio) y la meta automática */
+export const newScheduleSchema = z.object({ serviceId: objectId, year: z.number().int().min(2024).max(2100), month: z.number().int().min(0).max(11), team: teamInputSchema.optional() });
+export const newScheduleProposalQuerySchema = z.object({ serviceId: objectId, year: z.coerce.number().int().min(2024).max(2100), month: z.coerce.number().int().min(0).max(11) });
 
 /* ----- Cuadros: todas las escrituras llevan `version` (el __v que el cliente conoce); si no coincide, 409 ----- */
 export const absenceCodeSchema = z.enum(['V', 'I', 'P']);
@@ -73,14 +80,12 @@ export const cellChangeSchema = z.object({
   code: shiftCodeSchema.nullable()      // null = quitar la fijación (el cuadro se recalcula)
 });
 export const cellsUpdateSchema = z.object({ version, changes: z.array(cellChangeSchema).min(1).max(2000) });
-/** Meta mensual de horas por persona (un mes tiene como máximo 744 h) */
-export const targetHoursSchema = z.number().min(0).max(744);
 export const scheduleUpdateSchema = z.object({
   version,
   status: scheduleStatusSchema.optional(),
   coverage: coverageSchema.optional(),
   rules: rulesSchema.optional(),
-  team: z.array(z.object({ therapistId: objectId, kind: kindSchema, targetHours: targetHoursSchema.nullable().optional() })).min(2, 'Se necesitan al menos 2 terapeutas').max(60).optional()
+  team: teamInputSchema.optional()
 });
 export const generateSchema = z.object({ version, variant: z.boolean().default(false) });
 const absenceRange = z.object({ version, therapistId: objectId, from: dayNumber, to: dayNumber });
@@ -131,6 +136,17 @@ export interface ScheduleDTO {
 export interface ScheduleSummaryDTO {
   id: string; serviceId: string; year: number; month: number; status: 'bor'|'pub'; ownerId: string; ownerName: string;
   days: number; totalHours: number; neededHours: number; planta: number; apoyo: number; criticalAlerts: number
+}
+/** Una terapeuta activa del directorio al crear un cuadro: si viene marcada, con qué tipo y meta, y en qué otros cuadros del mes ya está */
+export interface NewScheduleOptionDTO {
+  therapistId: string; name: string; inService: boolean; selected: boolean; kind: Kind; targetHours: number | null;
+  /** Nombres de los otros servicios que ya la tienen en un cuadro de ese mes */
+  elsewhere: string[];
+}
+/** Propuesta para crear un cuadro: la misma que se usaría sin elegir nada, para revisarla y cambiarla */
+export interface NewScheduleProposalDTO {
+  /** Ya existe un cuadro de ese servicio y mes */
+  exists: boolean; hasPrevious: boolean; days: number; coverage: Coverage; options: NewScheduleOptionDTO[];
 }
 /** Cuerpo de un 409 por versión: quién hizo el último cambio y la versión actual */
 export interface VersionConflictDetails { updatedByName?: string; version: number }
