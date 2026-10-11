@@ -6,8 +6,8 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 
 | # | Fase | Estado |
 | --- | --- | --- |
-| 0 | Higiene de `MEJORAS.md` y rutas entre repos | ◐ |
-| 1 | Crear cuadro con selección de equipo y meta de horas | ☐ |
+| 0 | Higiene de `MEJORAS.md` y rutas entre repos | ☑ |
+| 1 | Crear cuadro con selección de equipo y meta de horas | ☑ |
 | 2 | Cuentas | ☐ |
 | 3 | Integridad de datos | ☐ |
 | 4 | Auditoría legible | ☐ |
@@ -16,14 +16,14 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | 7 | Motor v2 | ☐ |
 | 8 | Escalado (solo si hace falta) | ☐ |
 
-## Fase 0 · Higiene
+## Fase 0 · Higiene (hecha)
 - Quitar de `MEJORAS.md` lo que ya está resuelto: `trust proxy` (existe `TRUST_PROXY`) y «primer administrador en producción» (lo cubre `npm run users:bootstrap`).
 - Un solo `MEJORAS.md` (este repo); el del frontend apunta aquí.
 - Las rutas `../backend` y `../frontend` de los scripts suponen carpetas con ese nombre; aquí se llaman `relevo-backend` y `relevo-frontend`. `sync:engine` ya acepta `BACKEND_DIR`; Playwright (`playwright.config.ts`, `e2e/global-setup.ts`) ahora también.
 - Contraste de color (WCAG AA): se recalculó el 2026-10-11. El modo nocturno cumple; el **tema claro** sigue sin cumplir (acento 3,72:1 sobre `--accent-soft`, 4,30:1 con texto blanco; `--err` 4,42:1). Sigue pendiente la aprobación del cambio de tono.
 - `CLAUDE.md` del frontend dice «Solo tema claro. Nunca modo oscuro», pero el frontend ya trae modo nocturno: actualizar la regla.
 
-## Fase 1 · Crear cuadro con selección de equipo y meta de horas
+## Fase 1 · Crear cuadro con selección de equipo y meta de horas (hecha)
 Hoy `POST /schedules` toma el equipo del mes anterior (o todas las activas del servicio) sin preguntar, y la meta de horas por persona (`targetHours`) solo se fija al importar o después, una persona a la vez.
 
 El diálogo «Nuevo cuadro» pasa a tres pasos:
@@ -90,3 +90,9 @@ Disparador: cuando `npm run perf` se degrade o el histórico crezca.
 5. Cambio de tono del acento en el tema claro (WCAG AA).
 6. Cómo funciona `MN` en la práctica.
 7. Fase 1: se asume que el mes siguiente propone la meta del mes anterior y que no se fija meta al apoyo; confirmar.
+
+## Notas de la ejecución
+- Fase 1: `GET /schedules/proposal` y `team` opcional en `POST /schedules`; diálogo de tres pasos en el frontend. Se asumió que el mes siguiente propone la meta del mes anterior y que el apoyo no lleva meta.
+- El generador (`src/lib/generate.ts`) fallaba al crear cualquier cuadro (500, `ERR_UNKNOWN_FILE_EXTENSION`): `--import tsx` no se aplicaba dentro del worker. Ahora el worker registra tsx con su API. Probado con Node 22.14; con Node 23.9 (el de Homebrew) el proyecto no está verificado, usar Node 22 (`.nvmrc`).
+- El e2e del frontend no pasaba el inicio de sesión por el diálogo de bienvenida; el helper ya lo cierra.
+- Lint del frontend: queda un aviso previo en `e2e/a11y.spec.ts` (`console.log`), sin tocar.
