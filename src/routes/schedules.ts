@@ -32,6 +32,10 @@ async function loadFor(req: Request, version?: number): Promise<ScheduleDoc> {
   if (version !== undefined && s.__v !== version) throw await versionConflict(s._id);
   return normalize(s);
 }
+/** Un cuadro publicado no se edita: hay que volver a borrador primero (la interfaz lo ofrece). */
+const assertEditable = (s: ScheduleDoc) => {
+  if (s.status === 'pub') throw new HttpError(409, 'PUBLISHED_LOCKED', 'Este cuadro está publicado. Vuelve a borrador para editarlo.');
+};
 const cloneMembers = (s: ScheduleDoc): MemberDoc[] => s.members.map(m => ({ ...m, days: [...m.days], locked: m.locked.map(l => ({ ...l })) }));
 const memberOf = (members: MemberDoc[], therapistId: string) => {
   const m = members.find(x => String(x.therapistId) === therapistId);
@@ -275,6 +279,16 @@ schedules.get('/:id/export', heavy, h(async (req, res) => {
 
 schedules.get('/:id', h(async (req, res) => { res.json(await toDTO(await loadFor(req))); }));
 
+/** Eliminar un cuadro creado por error. Solo en borrador: uno publicado ya lo vio el equipo y primero vuelve a borrador. */
+schedules.delete('/:id', h(async (req, res) => {
+  const s = await loadFor(req);
+  if (s.status === 'pub') throw new HttpError(409, 'PUBLISHED_LOCKED', 'Un cuadro publicado no se puede eliminar. Vuelve a borrador primero.');
+  const service: any = await Service.findById(s.serviceId).select('name').lean();
+  await Schedule.deleteOne({ _id: s._id });
+  await audit(req, 'delete', 'schedule', s._id, `Eliminó el cuadro de ${service?.name ?? 'un servicio'} ${s.month + 1}/${s.year} (borrador)`);
+  res.status(204).end();
+}));
+
 /** Alertas del servidor: las reglas del motor más los cruces con otros cuadros del mismo mes. */
 schedules.get('/:id/validation', h(async (req, res) => {
   const s = await loadFor(req);
@@ -290,6 +304,7 @@ schedules.get('/:id/validation', h(async (req, res) => {
 schedules.patch('/:id', regen, h(async (req, res) => {
   const body = parse(scheduleUpdateSchema, req.body);
   const s = await loadFor(req, body.version);
+  if ((body.team || body.coverage || body.rules) && body.status !== 'bor') assertEditable(s); // solo el estado se cambia estando publicado
   let members = cloneMembers(s);
   let regen = false;
 
@@ -327,6 +342,7 @@ schedules.patch('/:id', regen, h(async (req, res) => {
 schedules.put('/:id/cells', h(async (req, res) => {
   const body = parse(cellsUpdateSchema, req.body);
   const s = await loadFor(req, body.version);
+  assertEditable(s);
   const n = daysIn(s.year, s.month), members = cloneMembers(s);
   let released = false;
   for (const ch of body.changes) {
@@ -344,6 +360,7 @@ schedules.put('/:id/cells', h(async (req, res) => {
 schedules.post('/:id/generate', regen, h(async (req, res) => {
   const body = parse(generateSchema, req.body);
   const s = await loadFor(req, body.version);
+  assertEditable(s);
   const seed = body.variant ? (s.seed * 7 + 11) % 9973 + 1 : s.seed;
   const near = await neighborsOf(s);
   const members = await regenerate(s, cloneMembers(s), { seed }, near);
@@ -356,6 +373,7 @@ schedules.post('/:id/generate', regen, h(async (req, res) => {
 schedules.post('/:id/absences', regen, h(async (req, res) => {
   const body = parse(absenceInputSchema, req.body);
   const s = await loadFor(req, body.version);
+  assertEditable(s);
   const n = daysIn(s.year, s.month);
   if (body.to > n) throw new HttpError(400, 'VALIDATION', `Ese mes tiene ${n} días.`);
   const members = cloneMembers(s), m = memberOf(members, body.therapistId);
@@ -369,6 +387,7 @@ schedules.post('/:id/absences', regen, h(async (req, res) => {
 schedules.delete('/:id/absences', regen, h(async (req, res) => {
   const q = parse(absenceDeleteSchema, req.query);
   const s = await loadFor(req, q.version);
+  assertEditable(s);
   const members = cloneMembers(s), m = memberOf(members, q.therapistId);
   for (let d = q.from - 1; d < q.to; d++) if (isOff(m.locked.find(l => l.day === d)?.code)) setLock(m, d, null);
   const near = await neighborsOf(s);

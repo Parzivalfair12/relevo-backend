@@ -45,6 +45,8 @@ export const registerSchema = z.object({ name: z.string().trim().min(1, 'Escribe
 /** Cambiar la propia contraseña: pide la actual y la nueva debe ser distinta */
 export const changePasswordSchema = z.object({ currentPassword: z.string().min(1, 'Escribe tu contraseña actual.').max(128), newPassword: password })
   .refine(p => p.newPassword !== p.currentPassword, { message: 'La contraseña nueva debe ser distinta de la actual.', path: ['newPassword'] });
+/** Eliminar a alguien que es dueña de cuadros exige elegir a quién pasárselos */
+export const deleteUserQuerySchema = z.object({ reassignTo: objectId.optional() });
 /** Un administrador fija una contraseña nueva a otra persona */
 export const resetPasswordSchema = z.object({ password });
 

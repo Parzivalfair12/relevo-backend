@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { resetPasswordSchema, userCreateSchema, userInputSchema } from '../shared/index.js';
-import { User } from '../models/index.js';
+import { deleteUserQuerySchema, resetPasswordSchema, userCreateSchema, userInputSchema } from '../shared/index.js';
+import { Schedule, User } from '../models/index.js';
 import { HttpError, authenticate, requireRole } from '../middleware/index.js';
 import { checkServices, h, idParam, parse } from '../lib/http.js';
 import { userDTO } from '../lib/dto.js';
@@ -81,9 +81,19 @@ users.post('/:id/unlock', h(async (req, res) => {
 users.delete('/:id', h(async (req, res) => {
   const id = idParam(req);
   if (id === req.user!.id) throw new HttpError(403, 'FORBIDDEN', 'No puedes eliminar tu propia cuenta.');
+  const { reassignTo } = parse(deleteUserQuerySchema, req.query);
   const u: any = await User.findById(id);
   if (!u) throw new HttpError(404, 'NOT_FOUND', 'Usuario no encontrado');
+  // Los cuadros guardan quién los creó: sin dueña la tarjeta mostraría «Creado por» vacío. Se pasan a otra persona o no se elimina.
+  const owned = await Schedule.countDocuments({ ownerId: id });
+  if (owned) {
+    if (!reassignTo) throw new HttpError(409, 'OWNS_SCHEDULES', `Esta persona es dueña de ${owned} cuadro(s). Elige a quién pasárselos para poder eliminarla.`, { count: owned });
+    if (reassignTo === id) throw new HttpError(400, 'VALIDATION', 'Elige a otra persona para pasarle los cuadros.');
+    const heir = await User.exists({ _id: reassignTo, status: 'activo' });
+    if (!heir) throw new HttpError(400, 'VALIDATION', 'La persona elegida no existe o no está activa.');
+    await Schedule.updateMany({ ownerId: id }, { $set: { ownerId: reassignTo } });
+  }
   await u.deleteOne();
-  await audit(req, 'delete', 'user', u._id, `Eliminó el usuario ${u.email}`);
+  await audit(req, 'delete', 'user', u._id, `Eliminó el usuario ${u.email}${owned ? ` y pasó ${owned} cuadro(s) a otra persona` : ''}`);
   res.status(204).end();
 }));
