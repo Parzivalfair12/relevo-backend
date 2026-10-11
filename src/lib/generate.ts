@@ -4,7 +4,7 @@ import type { Config, Grid } from '../engine/index.js';
 /**
  * La generación corre en un worker_thread. Hay un solo worker, creado al primer uso y reutilizado:
  * las peticiones se encolan en el hilo y no se paga el arranque en cada una.
- * El runtime es siempre tsx (npm start / dev / vitest), por eso el worker carga el .ts con `--import tsx`.
+ * El runtime es siempre tsx (npm start / dev / vitest), por eso el worker registra tsx y carga el .ts.
  */
 const TIMEOUT_MS = 30_000;
 let worker: Worker | null = null;
@@ -17,7 +17,9 @@ function failAll(err: Error) {
 
 function ensureWorker(): Worker {
   if (worker) return worker;
-  const w = new Worker(new URL('../workers/generate.worker.ts', import.meta.url), { execArgv: ['--import', 'tsx'] });
+  // tsx se registra dentro del propio hilo: con `execArgv: ['--import', 'tsx']` el worker no reconocía el .ts (ERR_UNKNOWN_FILE_EXTENSION)
+  const file = new URL('../workers/generate.worker.ts', import.meta.url).href;
+  const w = new Worker(`import('tsx/esm/api').then(({ register }) => { register(); return import(${JSON.stringify(file)}); })`, { eval: true });
   w.unref(); // un worker ocioso no impide que el proceso termine
   w.on('message', ({ id, grid, error }: { id: number; grid?: Grid; error?: string }) => {
     const p = pending.get(id); if (!p) return;
