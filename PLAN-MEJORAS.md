@@ -8,7 +8,7 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | --- | --- | --- |
 | 0 | Higiene de `MEJORAS.md` y rutas entre repos | ☑ |
 | 1 | Crear cuadro con selección de equipo y meta de horas | ☑ |
-| 2 | Cuentas | ☐ |
+| 2 | Cuentas | ◐ (falta recuperar por correo) |
 | 3 | Integridad de datos | ☐ |
 | 4 | Auditoría legible | ☐ |
 | 5 | Operación | ☐ |
@@ -37,10 +37,11 @@ Técnico:
 - La meta no se asigna a personas de apoyo (el motor las usa para completar lo que falta).
 - Frontend: nuevo `NewScheduleDialog`, textos en español e inglés, prueba e2e del flujo.
 
-## Fase 2 · Cuentas
-- Cambiar la propia contraseña.
-- Bloqueo temporal de la cuenta tras N intentos fallidos (contador en `User`, se limpia al entrar bien).
-- Recuperar por correo: a la espera de elegir proveedor SMTP; mientras tanto, restablecimiento por el administrador.
+## Fase 2 · Cuentas (hecha, salvo la recuperación por correo)
+- Hecho: cambiar la propia contraseña (`POST /auth/password`), bloqueo temporal (5 fallos seguidos en 15 min bloquean 15 min; responde como el límite de intentos), restablecer la contraseña de otra persona y desbloquear (`POST /users/:id/password` y `/unlock`), con botón «Contraseña» en la cabecera y las acciones en Administración.
+- Cambiar o restablecer la contraseña sube `tokenEpoch`: los tokens de las demás sesiones (renovación y acceso) dejan de valer al instante, sin confundirse con un robo.
+- Pendiente: recuperar por correo, a la espera de elegir proveedor SMTP. Mientras tanto, el administrador restablece la contraseña y se la da a la persona.
+- La contraseña mínima ahora se exige también al restablecer (8 caracteres): las cuentas de ejemplo del seed (`urg123`, `coord123`, `admin123`) son más cortas y solo existen para desarrollo.
 
 ## Fase 3 · Integridad de datos
 - Eliminar un cuadro (solo en borrador, con auditoría).

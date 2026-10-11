@@ -2,7 +2,6 @@
 
 - **Paginación del directorio.** El plan la menciona para terapeutas y auditoría; el mockup no tiene paginación y hoy son 18 registros. `GET /therapists` devuelve la lista completa (con filtros en el servidor). Agregar `page`/`limit` cuando el directorio crezca.
 - **Eliminar un usuario que es dueño de cuadros.** Hoy se permite (como en el mockup) y la tarjeta mostraría «Creado por» vacío. Valorar impedirlo (409) o reasignar los cuadros.
-- **Recuperar contraseña y cambiar la propia.** No están en el mockup; el plan lo deja a la espera de elegir proveedor de correo.
 - **Consulta de auditoría.** Se registran creaciones, ediciones y borrados de usuarios, servicios y terapeutas en `auditLogs`, pero no hay pantalla para leerlos.
 
 - **Huella del motor duplicada en dos repos.** El algoritmo vive en `scripts/engine-hash.mjs` (backend) y en `frontend/scripts/sync-engine.mjs`; si se cambia hay que cambiarlo en los dos. Valorar publicar el motor y los esquemas como paquete privado (npm/GitHub Packages) cuando el equipo crezca.
@@ -31,5 +30,6 @@
 - **Elegir equipo y meta de horas al crear un cuadro.** Hoy el equipo sale solo (mes anterior o activas del servicio) y la meta de horas se fija después, persona por persona. Ver la fase 1 de `PLAN-MEJORAS.md`.
 - **MongoDB con autenticación en el compose.** Hoy el MongoDB del compose no pide credenciales (solo escucha en 127.0.0.1). Con usuario y llave de réplica serviría también para pruebas de despliegue.
 - **Copias automáticas.** `npm run backup` es manual; programarlo (cron, tarea de Windows o el proveedor) y copiar los archivos fuera del servidor.
-- **Cuentas:** cambiar la propia contraseña, recuperarla por correo y bloquear cuentas tras muchos intentos fallidos (hoy solo se limitan los intentos por IP y por correo).
+- **Recuperar la contraseña por correo.** Cambiar la propia, el restablecimiento por el administrador y el bloqueo temporal ya están (fase 2); falta el correo, que depende de elegir proveedor SMTP.
+- **Aviso al bloquear una cuenta.** Hoy la persona ve «Demasiados intentos» y el administrador ve la pastilla «Bloqueada»; no se envía ningún aviso.
 - **Registro de auditoría legible.** Se guarda, pero no hay pantalla para leerlo ni política de conservación (TTL).
