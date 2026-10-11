@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { userCreateSchema, userInputSchema } from '../shared/index.js';
+import { resetPasswordSchema, userCreateSchema, userInputSchema } from '../shared/index.js';
 import { User } from '../models/index.js';
 import { HttpError, authenticate, requireRole } from '../middleware/index.js';
 import { checkServices, h, idParam, parse } from '../lib/http.js';
 import { userDTO } from '../lib/dto.js';
 import { hashPassword } from '../lib/tokens.js';
 import { audit } from '../lib/audit.js';
+import { clearFailures } from '../lib/lockout.js';
 
 /** Todo /users es solo para administradores. */
 export const users = Router();
@@ -51,6 +52,30 @@ users.post('/:id/approve', h(async (req, res) => {
   await u.save();
   await audit(req, 'approve', 'user', u._id, `Aprobó el acceso de ${u.email} como ${u.role}`);
   res.json(userDTO(u));
+}));
+
+/**
+ * Mientras no haya correo para recuperarla, el administrador fija una contraseña nueva a otra persona.
+ * Cierra todas sus sesiones y le quita el bloqueo; la contraseña nunca se guarda en la auditoría.
+ */
+users.post('/:id/password', h(async (req, res) => {
+  const id = idParam(req), { password } = parse(resetPasswordSchema, req.body);
+  if (id === req.user!.id) throw new HttpError(403, 'FORBIDDEN', 'Usa «Cambiar mi contraseña» para tu propia cuenta.');
+  const u: any = await User.findById(id);
+  if (!u) throw new HttpError(404, 'NOT_FOUND', 'Usuario no encontrado');
+  await User.updateOne({ _id: id }, { $set: { passwordHash: await hashPassword(password), refreshTokens: [], failedLogins: 0 }, $inc: { tokenEpoch: 1 }, $unset: { lockedUntil: 1, lastFailedAt: 1 } });
+  await audit(req, 'password', 'user', u._id, `Restableció la contraseña de ${u.email}`);
+  res.json({ ok: true });
+}));
+
+/** Quitar el bloqueo temporal de una cuenta sin esperar a que venza. */
+users.post('/:id/unlock', h(async (req, res) => {
+  const id = idParam(req);
+  const u: any = await User.findById(id);
+  if (!u) throw new HttpError(404, 'NOT_FOUND', 'Usuario no encontrado');
+  await clearFailures(id);
+  await audit(req, 'unlock', 'user', u._id, `Desbloqueó la cuenta de ${u.email}`);
+  res.json(userDTO(await User.findById(id)));
 }));
 
 users.delete('/:id', h(async (req, res) => {

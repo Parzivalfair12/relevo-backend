@@ -12,7 +12,13 @@ const userSchema = new Schema({
   status: { type: String, enum: ['activo', 'pendiente'], default: 'pendiente' },
   serviceIds: [{ type: oid, ref: 'Service' }],
   // Tokens de renovación vigentes (hash del jti). Rotan en cada uso; uno desconocido revoca todos.
-  refreshTokens: { type: [{ _id: false, jti: String, exp: Date }], select: false, default: [] }
+  refreshTokens: { type: [{ _id: false, jti: String, exp: Date }], select: false, default: [] },
+  // Bloqueo temporal por intentos fallidos de entrada (ver lib/lockout.ts)
+  // Generación de las sesiones: cambiar o restablecer la contraseña la sube y todos los tokens anteriores dejan de servir
+  tokenEpoch: { type: Number, default: 0 },
+  failedLogins: { type: Number, default: 0 },
+  lastFailedAt: Date,
+  lockedUntil: Date
 }, { timestamps: true });
 
 /* services: UCI Neurocrítica, Hospitalización... */

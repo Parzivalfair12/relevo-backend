@@ -14,25 +14,26 @@ export const verifyPassword = (hash: string, pw: string) => argon2.verify(hash, 
 /** Hash válido pero sin dueño: se verifica cuando el correo no existe para que el tiempo de respuesta no delate cuentas. */
 export const DUMMY_HASH = await hashPassword('turnos-dummy-password');
 
-export const signAccess = (userId: string, role: string) =>
-  jwt.sign({ role }, config.JWT_ACCESS_SECRET, { subject: userId, expiresIn: ACCESS_TTL_SECONDS, algorithm: 'HS256' });
-export function verifyAccess(token: string): { sub: string } {
+/** `epoch` es la generación de sesiones de la cuenta (User.tokenEpoch): un token de otra generación ya no vale. */
+export const signAccess = (userId: string, role: string, epoch = 0) =>
+  jwt.sign({ role, ep: epoch }, config.JWT_ACCESS_SECRET, { subject: userId, expiresIn: ACCESS_TTL_SECONDS, algorithm: 'HS256' });
+export function verifyAccess(token: string): { sub: string; ep: number } {
   const p = jwt.verify(token, config.JWT_ACCESS_SECRET, { algorithms: ['HS256'] });
   if (typeof p === 'string' || !p.sub) throw new Error('token inválido');
-  return { sub: p.sub };
+  return { sub: p.sub, ep: typeof p.ep === 'number' ? p.ep : 0 };
 }
 
 /** El token de renovación es un JWT con un jti aleatorio; en la base solo se guarda el hash del jti. */
 export const hashJti = (jti: string) => createHash('sha256').update(jti).digest('hex');
-export function signRefresh(userId: string) {
+export function signRefresh(userId: string, epoch = 0) {
   const jti = randomUUID();
-  const token = jwt.sign({}, config.JWT_REFRESH_SECRET, { subject: userId, jwtid: jti, expiresIn: REFRESH_TTL_SECONDS, algorithm: 'HS256' });
+  const token = jwt.sign({ ep: epoch }, config.JWT_REFRESH_SECRET, { subject: userId, jwtid: jti, expiresIn: REFRESH_TTL_SECONDS, algorithm: 'HS256' });
   return { token, jtiHash: hashJti(jti), exp: new Date(Date.now() + REFRESH_TTL_SECONDS * 1000) };
 }
-export function verifyRefresh(token: string): { sub: string; jtiHash: string } {
+export function verifyRefresh(token: string): { sub: string; jtiHash: string; ep: number } {
   const p = jwt.verify(token, config.JWT_REFRESH_SECRET, { algorithms: ['HS256'] });
   if (typeof p === 'string' || !p.sub || !p.jti) throw new Error('token inválido');
-  return { sub: p.sub, jtiHash: hashJti(p.jti) };
+  return { sub: p.sub, jtiHash: hashJti(p.jti), ep: typeof p.ep === 'number' ? p.ep : 0 };
 }
 
 /** httpOnly + SameSite=Strict siempre; Secure en producción (el navegador no guarda cookies Secure sobre http en desarrollo). */

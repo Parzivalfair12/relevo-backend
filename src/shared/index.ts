@@ -42,6 +42,11 @@ const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Identificador inválido'
 
 export const loginSchema = z.object({ email, password: z.string().min(1).max(128) });
 export const registerSchema = z.object({ name: z.string().trim().min(1, 'Escribe tu nombre completo.').max(120), email, password });
+/** Cambiar la propia contraseña: pide la actual y la nueva debe ser distinta */
+export const changePasswordSchema = z.object({ currentPassword: z.string().min(1, 'Escribe tu contraseña actual.').max(128), newPassword: password })
+  .refine(p => p.newPassword !== p.currentPassword, { message: 'La contraseña nueva debe ser distinta de la actual.', path: ['newPassword'] });
+/** Un administrador fija una contraseña nueva a otra persona */
+export const resetPasswordSchema = z.object({ password });
 
 export const serviceInputSchema = z.object({
   name: z.string().trim().min(3, 'Escribe el nombre del servicio.').max(80),
@@ -118,7 +123,8 @@ export const dashboardQuerySchema = z.object({ service: objectId.optional(), fro
   .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'El período inicial no puede ser posterior al final.', path: ['to'] });
 
 /* ===== Tipos de respuesta de la API ===== */
-export interface UserDTO { id: string; name: string; email: string; role: Role; status: 'activo'|'pendiente'; serviceIds: string[] }
+/** `lockedUntil`: fecha ISO hasta la que la cuenta está bloqueada por intentos fallidos; null si no lo está */
+export interface UserDTO { id: string; name: string; email: string; role: Role; status: 'activo'|'pendiente'; serviceIds: string[]; lockedUntil: string | null }
 /** scheduleCount y therapistCount solo los usa la pantalla de Administración */
 export interface ServiceDTO { id: string; name: string; color: string; scheduleCount?: number; therapistCount?: number }
 export interface TherapistDTO { id: string; name: string; document: string; position: string; defaultKind: Kind; serviceIds: string[]; active: boolean; scheduleCount: number }

@@ -36,10 +36,11 @@ export const notImplemented = (phase: string) => (_req: Request, _res: Response,
 export function authenticate(req: Request, _res: Response, next: NextFunction) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
   if (!m) return next(new HttpError(401, 'UNAUTHENTICATED', 'Inicia sesión para continuar'));
-  let sub: string;
-  try { sub = verifyAccess(m[1]).sub; } catch { return next(new HttpError(401, 'UNAUTHENTICATED', 'La sesión venció')); }
-  User.findById(sub).select('role status serviceIds').lean().then((u: any) => {
-    if (!u || u.status !== 'activo') return next(new HttpError(401, 'UNAUTHENTICATED', 'La sesión venció'));
+  let sub: string, ep: number;
+  try { ({ sub, ep } = verifyAccess(m[1])); } catch { return next(new HttpError(401, 'UNAUTHENTICATED', 'La sesión venció')); }
+  User.findById(sub).select('role status serviceIds tokenEpoch').lean().then((u: any) => {
+    // Cambió o se restableció la contraseña después de emitir este token: ya no vale
+    if (!u || u.status !== 'activo' || (u.tokenEpoch ?? 0) !== ep) return next(new HttpError(401, 'UNAUTHENTICATED', 'La sesión venció'));
     req.user = { id: String(u._id), role: u.role, serviceIds: (u.serviceIds ?? []).map(String) };
     next();
   }, next);

@@ -3,7 +3,8 @@ import type { ServiceDTO, TherapistDTO, UserDTO } from '../shared/index.js';
 const ids = (a?: unknown[]) => (a ?? []).map(String);
 
 export const userDTO = (u: any): UserDTO => ({
-  id: String(u._id), name: u.name, email: u.email, role: u.role, status: u.status, serviceIds: ids(u.serviceIds)
+  id: String(u._id), name: u.name, email: u.email, role: u.role, status: u.status, serviceIds: ids(u.serviceIds),
+  lockedUntil: u.lockedUntil && new Date(u.lockedUntil) > new Date() ? new Date(u.lockedUntil).toISOString() : null
 });
 export const serviceDTO = (s: any, counts?: { schedules: number; therapists: number }): ServiceDTO => ({
   id: String(s._id), name: s.name, color: s.color,
