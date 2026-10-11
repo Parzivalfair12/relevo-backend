@@ -9,7 +9,7 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | 0 | Higiene de `MEJORAS.md` y rutas entre repos | ☑ |
 | 1 | Crear cuadro con selección de equipo y meta de horas | ☑ |
 | 2 | Cuentas | ◐ (falta recuperar por correo) |
-| 3 | Integridad de datos | ☐ |
+| 3 | Integridad de datos | ☑ |
 | 4 | Auditoría legible | ☐ |
 | 5 | Operación | ☐ |
 | 6 | Resumen y archivos (mejoras pequeñas) | ☐ |
@@ -43,10 +43,10 @@ Técnico:
 - Pendiente: recuperar por correo, a la espera de elegir proveedor SMTP. Mientras tanto, el administrador restablece la contraseña y se la da a la persona.
 - La contraseña mínima ahora se exige también al restablecer (8 caracteres): las cuentas de ejemplo del seed (`urg123`, `coord123`, `admin123`) son más cortas y solo existen para desarrollo.
 
-## Fase 3 · Integridad de datos
-- Eliminar un cuadro (solo en borrador, con auditoría).
-- Eliminar un usuario que es dueño de cuadros: 409 con mensaje claro.
-- Bloquear la edición de un cuadro publicado: 409 en el servidor y «Volver a borrador» en la interfaz.
+## Fase 3 · Integridad de datos (hecha)
+- Eliminar un cuadro: solo en borrador, con confirmación y auditoría (`DELETE /schedules/:id`; botón en el editor).
+- Eliminar a una persona dueña de cuadros: 409 `OWNS_SCHEDULES` con la cantidad; con `?reassignTo=<id>` se pasan a otra persona activa y se elimina. En Administración se elige a quién pasárselos.
+- Un cuadro publicado no se edita: 409 `PUBLISHED_LOCKED` en casillas, generar, ausencias, cobertura, reglas y equipo; la interfaz lo muestra en solo lectura con aviso y «Volver a borrador». Pendiente de confirmar con las coordinadoras (decisión 3).
 
 ## Fase 4 · Auditoría legible
 - Pantalla de solo lectura para el administrador, con filtros por entidad, persona y fecha, y paginación por cursor.

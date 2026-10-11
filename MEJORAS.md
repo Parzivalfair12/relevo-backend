@@ -1,15 +1,13 @@
 # Mejoras propuestas (no implementar sin aprobación)
 
 - **Paginación del directorio.** El plan la menciona para terapeutas y auditoría; el mockup no tiene paginación y hoy son 18 registros. `GET /therapists` devuelve la lista completa (con filtros en el servidor). Agregar `page`/`limit` cuando el directorio crezca.
-- **Eliminar un usuario que es dueño de cuadros.** Hoy se permite (como en el mockup) y la tarjeta mostraría «Creado por» vacío. Valorar impedirlo (409) o reasignar los cuadros.
 - **Consulta de auditoría.** Se registran creaciones, ediciones y borrados de usuarios, servicios y terapeutas en `auditLogs`, pero no hay pantalla para leerlos.
 
 - **Huella del motor duplicada en dos repos.** El algoritmo vive en `scripts/engine-hash.mjs` (backend) y en `frontend/scripts/sync-engine.mjs`; si se cambia hay que cambiarlo en los dos. Valorar publicar el motor y los esquemas como paquete privado (npm/GitHub Packages) cuando el equipo crezca.
 - **El plan no tiene la sección «Estructura de los repositorios».** `referencia/` del frontend conserva la versión anterior del plan.
 
 - **Evitar cruces entre servicios al generar.** Hoy se detectan y se marcan como error crítico (como el mockup), pero el motor no sabe qué días ya ocupan otros cuadros. El plan lo prevé para la 1.0: exige cambiar `src/engine` (pasar los días ocupados), regenerar `engine-golden.json` y sincronizar el frontend.
-- **Bloquear la edición de un cuadro Publicado.** El mockup (y hoy la app) deja editar un cuadro publicado; publicar solo cambia el estado. Valorar pedir «Volver a borrador» antes de editar.
-- **Eliminar un cuadro.** No está en el mockup ni en el plan; hoy un cuadro creado por error no se puede borrar desde la interfaz.
+- **Eliminar un cuadro publicado.** Hoy solo se elimina en borrador (hay que volver a borrador primero); si las coordinadoras lo piden, se puede permitir con una confirmación más fuerte.
 - **Listar cuadros sin cargarlos todos.** `GET /schedules` lee todos los cuadros para calcular los cruces de las tarjetas; con mucho histórico conviene limitar a los meses visibles.
 - **Auditar casillas individuales.** Se audita crear, generar, cambiar reglas/cobertura/equipo, ausencias y publicar; pintar casillas no, para no llenar el registro.
 - **Aviso de conflicto sin esperar al guardado.** El 409 se descubre al guardar (~800 ms después de pintar); un aviso en vivo (SSE o sondeo) lo anticiparía.
