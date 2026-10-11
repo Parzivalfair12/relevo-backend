@@ -4,7 +4,6 @@
 - **Eliminar un usuario que es dueño de cuadros.** Hoy se permite (como en el mockup) y la tarjeta mostraría «Creado por» vacío. Valorar impedirlo (409) o reasignar los cuadros.
 - **Recuperar contraseña y cambiar la propia.** No están en el mockup; el plan lo deja a la espera de elegir proveedor de correo.
 - **Consulta de auditoría.** Se registran creaciones, ediciones y borrados de usuarios, servicios y terapeutas en `auditLogs`, pero no hay pantalla para leerlos.
-- **`trust proxy` y cookies detrás de un balanceador** (fase 6): el límite de intentos por IP necesita `app.set('trust proxy', …)` en producción.
 
 - **Huella del motor duplicada en dos repos.** El algoritmo vive en `scripts/engine-hash.mjs` (backend) y en `frontend/scripts/sync-engine.mjs`; si se cambia hay que cambiarlo en los dos. Valorar publicar el motor y los esquemas como paquete privado (npm/GitHub Packages) cuando el equipo crezca.
 - **El plan no tiene la sección «Estructura de los repositorios».** `referencia/` del frontend conserva la versión anterior del plan.
@@ -28,8 +27,8 @@
 - **Festivos en el archivo.** El hospital pinta de naranja días completos que parecen festivos; el formato exportado solo marca fines de semana (amarillo) y ausencias (naranja). Depende del calendario de festivos de la versión 1.1.
 - **Leer a mano el ODS en LibreOffice.** El ODS se valida con pruebas (paquete, XML bien formado, lectura con SheetJS y ida y vuelta) pero no hay LibreOffice en este equipo para abrirlo: conviene abrir una vez un archivo exportado en el programa del hospital (criterio de cierre de la fase en el plan).
 
-- **Aprobar el cambio de color del acento (`--accent`, `--err`) para cumplir WCAG AA.** Ver la decisión pendiente en el `CLAUDE.md` del frontend: es un ajuste de tono mínimo y no se aplicó sin aprobación.
-- **Primer administrador en producción.** El seed está prohibido allí; falta un comando (`npm run create-admin`) que cree el primer administrador pidiendo la contraseña, para la fase de despliegue.
+- **Aprobar el cambio de color del acento (`--accent`, `--err`) para cumplir WCAG AA en el tema claro.** Ver la decisión pendiente en el `CLAUDE.md` del frontend: es un ajuste de tono mínimo y no se aplicó sin aprobación. El modo nocturno ya cumple (revisado el 2026-10-11).
+- **Elegir equipo y meta de horas al crear un cuadro.** Hoy el equipo sale solo (mes anterior o activas del servicio) y la meta de horas se fija después, persona por persona. Ver la fase 1 de `PLAN-MEJORAS.md`.
 - **MongoDB con autenticación en el compose.** Hoy el MongoDB del compose no pide credenciales (solo escucha en 127.0.0.1). Con usuario y llave de réplica serviría también para pruebas de despliegue.
 - **Copias automáticas.** `npm run backup` es manual; programarlo (cron, tarea de Windows o el proveedor) y copiar los archivos fuera del servidor.
 - **Cuentas:** cambiar la propia contraseña, recuperarla por correo y bloquear cuentas tras muchos intentos fallidos (hoy solo se limitan los intentos por IP y por correo).
