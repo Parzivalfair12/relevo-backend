@@ -12,15 +12,13 @@
 - **Auditar casillas individuales.** Se audita crear, generar, cambiar reglas/cobertura/equipo, ausencias y publicar; pintar casillas no, para no llenar el registro.
 - **Aviso de conflicto sin esperar al guardado.** El 409 se descubre al guardar (~800 ms después de pintar); un aviso en vivo (SSE o sondeo) lo anticiparía.
 
-- **Elegir un rango de meses libre en el resumen.** La API acepta cualquier `from`/`to` (`AAAA-MM`), pero la pantalla ofrece solo lo del mockup: los tres meses más recientes y su rango.
 - **Contar un cruce entre servicios una sola vez.** El resumen y las tarjetas lo cuentan una vez por cada cuadro afectado (un cruce suma 2), igual que el mockup; podría mostrarse como 1 cruce.
-- **Etiqueta del rango entre años.** «Noviembre a enero» no dice el año; podría mostrarse «Noviembre 2026 a enero 2027» cuando cruza el año.
 - **Calcular el resumen sin leer todos los cuadros.** Lee todos los cuadros y agrega en Node; con mucho histórico conviene filtrar por meses en la consulta o agregar en MongoDB.
 
 - **Exportar con la ausencia escrita como palabra.** El hospital escribe «PERMISO» repartido en los días de la ausencia; la exportación escribe la letra `V`, `I` o `P` (se lee y se reimporta sin ambigüedad). Si el hospital prefiere su estilo, se puede escribir la palabra completa repartida en el tramo.
 - **Turnos que el motor no representa.** El cuadro real trae `MN` (mañana y noche, 18 h) y similares; hoy se avisan y quedan libres. Soportarlos exige cambiar el motor (nuevos códigos y horas) y regenerar los casos fijos.
-- ~~Importar a varios meses o servicios de una vez.~~ Hecho: el diálogo marca las tablas del archivo y cada una lleva su servicio, mes, tipo (planta o apoyo) y meta de horas por persona; `POST /schedules/import/batch` responde por tabla. Pendiente: que el servicio se reconozca también por el nombre de la hoja cuando el título no lo trae.
-- **Crear terapeutas desde el archivo.** Si un nombre no está en el directorio hoy se elige otra persona o se omite; podría ofrecer registrarla desde el mismo diálogo (el plan prevé una carga inicial del directorio desde el cuadro actual, con revisión).
+- ~~Importar a varios meses o servicios de una vez.~~ Hecho: el diálogo marca las tablas del archivo y cada una lleva su servicio, mes, tipo (planta o apoyo) y meta de horas por persona; `POST /schedules/import/batch` responde por tabla. El servicio se reconoce por el título o por abreviaturas del nombre de la hoja.
+- **Crear terapeutas desde el archivo, también para coordinadoras.** Hoy solo los administradores las registran al importar (así lo exige el directorio); si se quiere que las coordinadoras lo hagan, hay que cambiar el permiso del directorio. Tampoco se pide documento ni cargo: quedan como «Terapeuta respiratoria» y se completan en Equipo.
 - **Festivos en el archivo.** El hospital pinta de naranja días completos que parecen festivos; el formato exportado solo marca fines de semana (amarillo) y ausencias (naranja). Depende del calendario de festivos de la versión 1.1.
 - **Leer a mano el ODS en LibreOffice.** El ODS se valida con pruebas (paquete, XML bien formado, lectura con SheetJS y ida y vuelta) pero no hay LibreOffice en este equipo para abrirlo: conviene abrir una vez un archivo exportado en el programa del hospital (criterio de cierre de la fase en el plan).
 

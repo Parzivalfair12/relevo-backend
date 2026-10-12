@@ -12,7 +12,7 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | 3 | Integridad de datos | ☑ |
 | 4 | Auditoría legible | ☑ |
 | 5 | Operación | ⏸ aplazada (depende de dónde se aloje el sistema) |
-| 6 | Resumen y archivos (mejoras pequeñas) | ☐ |
+| 6 | Resumen y archivos (mejoras pequeñas) | ◐ (faltan decisiones) |
 | 7 | Motor v2 | ☐ |
 | 8 | Escalado (solo si hace falta) | ☐ |
 
@@ -58,12 +58,10 @@ Técnico:
 - MongoDB con usuario y llave de réplica en el compose.
 - Copias automáticas programables y copia fuera del servidor, con la prueba de restauración existente.
 
-## Fase 6 · Resumen y archivos
-- Etiqueta del rango con año cuando cruza de año.
-- Rango de meses libre en el resumen.
+## Fase 6 · Resumen y archivos (hecha, salvo lo que depende de decisiones)
+- Hecho: año en el rango del resumen cuando cruza de año; rango de meses libre («Otro rango…»); el servicio de una tabla se reconoce también por abreviaturas del nombre de la hoja («UCI», «HOSP»); los administradores registran terapeutas nuevas desde el diálogo de importar (si ya existe alguien con ese nombre se usa esa persona; las coordinadoras deben pedirlo).
+- Pendiente de decisión: contar un cruce como 1; ausencia como palabra; abrir un ODS en LibreOffice.
 - Contar un cruce entre servicios como 1 (cambia los números respecto al mockup: requiere aprobación).
-- Reconocer el servicio por el nombre de la hoja al importar.
-- Crear terapeutas desde el archivo importado.
 - Pendientes de confirmar con el hospital: ausencia como palabra («PERMISO»), abrir un ODS exportado en LibreOffice.
 
 ## Fase 7 · Motor v2
