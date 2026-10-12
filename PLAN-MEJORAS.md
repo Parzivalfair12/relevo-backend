@@ -10,7 +10,7 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | 1 | Crear cuadro con selección de equipo y meta de horas | ☑ |
 | 2 | Cuentas | ◐ (falta recuperar por correo) |
 | 3 | Integridad de datos | ☑ |
-| 4 | Auditoría legible | ☐ |
+| 4 | Auditoría legible | ☑ |
 | 5 | Operación | ☐ |
 | 6 | Resumen y archivos (mejoras pequeñas) | ☐ |
 | 7 | Motor v2 | ☐ |
@@ -48,9 +48,11 @@ Técnico:
 - Eliminar a una persona dueña de cuadros: 409 `OWNS_SCHEDULES` con la cantidad; con `?reassignTo=<id>` se pasan a otra persona activa y se elimina. En Administración se elige a quién pasárselos.
 - Un cuadro publicado no se edita: 409 `PUBLISHED_LOCKED` en casillas, generar, ausencias, cobertura, reglas y equipo; la interfaz lo muestra en solo lectura con aviso y «Volver a borrador». Pendiente de confirmar con las coordinadoras (decisión 3).
 
-## Fase 4 · Auditoría legible
-- Pantalla de solo lectura para el administrador, con filtros por entidad, persona y fecha, y paginación por cursor.
-- Índice TTL en `auditLogs` (plazo por definir con el área jurídica; Ley 1581 de 2012).
+## Fase 4 · Auditoría legible (hecha)
+- Pestaña «Auditoría» solo para administradores (`GET /audit`, de solo lectura): lo más reciente primero, filtros por tipo, acción, persona, fechas y texto del detalle, y «Cargar más» (paginación por cursor).
+- Plazo de conservación: `AUDIT_RETENTION_DAYS` (0 = para siempre, que es el valor por omisión). Con un número, un índice TTL hace que MongoDB borre solo los registros más viejos; la pantalla indica el plazo vigente. **Falta que el hospital, con su área jurídica (Ley 1581 de 2012), defina los días** y que quien despliegue ponga ese valor en el `.env` de producción.
+- `API_RATE_LIMIT` (300 por minuto y por IP por omisión) pasa a ser configurable; el e2e lo sube porque todo sale de una IP.
+- Los detalles se guardan en español tal como se escribieron; con la interfaz en inglés se ven en español.
 
 ## Fase 5 · Operación
 - MongoDB con usuario y llave de réplica en el compose.

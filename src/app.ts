@@ -24,7 +24,7 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
   // Límite general por IP; el inicio de sesión y las rutas pesadas tienen los suyos más estrictos
-  app.use('/api', rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: true, legacyHeaders: false }));
+  app.use('/api', rateLimit({ windowMs: 60_000, limit: config.API_RATE_LIMIT, standardHeaders: true, legacyHeaders: false }));
   app.use('/api/v1', api);
   app.use((_req, res) => res.status(404).json({ code: 'NOT_FOUND', message: 'Ruta no encontrada' }));
   app.use(errorHandler);

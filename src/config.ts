@@ -17,6 +17,8 @@ const schema = z.object({
    * peticiones parecen venir de la misma IP y el límite de intentos por IP bloquearía a todos a la vez.
    */
   TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
+  /** Peticiones por minuto y por IP a toda la API. Las pruebas de navegador, que salen todas de una IP, lo suben. */
+  API_RATE_LIMIT: z.coerce.number().int().min(10).max(100_000).default(300),
   /**
    * Días que se conservan los registros de auditoría; al vencer, MongoDB los borra solo (índice TTL).
    * 0 = no se borran nunca. El plazo lo define el hospital con su área jurídica (Ley 1581 de 2012).

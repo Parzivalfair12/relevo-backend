@@ -1,7 +1,7 @@
 # Mejoras propuestas (no implementar sin aprobación)
 
 - **Paginación del directorio.** El plan la menciona para terapeutas y auditoría; el mockup no tiene paginación y hoy son 18 registros. `GET /therapists` devuelve la lista completa (con filtros en el servidor). Agregar `page`/`limit` cuando el directorio crezca.
-- **Consulta de auditoría.** Se registran creaciones, ediciones y borrados de usuarios, servicios y terapeutas en `auditLogs`, pero no hay pantalla para leerlos.
+- **Auditoría: detalles traducidos y exportación.** La pantalla muestra el detalle en español aunque la interfaz esté en inglés, y no se puede exportar a Excel; pedirlo si el hospital lo necesita para una revisión.
 
 - **Huella del motor duplicada en dos repos.** El algoritmo vive en `scripts/engine-hash.mjs` (backend) y en `frontend/scripts/sync-engine.mjs`; si se cambia hay que cambiarlo en los dos. Valorar publicar el motor y los esquemas como paquete privado (npm/GitHub Packages) cuando el equipo crezca.
 - **El plan no tiene la sección «Estructura de los repositorios».** `referencia/` del frontend conserva la versión anterior del plan.
@@ -30,4 +30,4 @@
 - **Copias automáticas.** `npm run backup` es manual; programarlo (cron, tarea de Windows o el proveedor) y copiar los archivos fuera del servidor.
 - **Recuperar la contraseña por correo.** Cambiar la propia, el restablecimiento por el administrador y el bloqueo temporal ya están (fase 2); falta el correo, que depende de elegir proveedor SMTP.
 - **Aviso al bloquear una cuenta.** Hoy la persona ve «Demasiados intentos» y el administrador ve la pastilla «Bloqueada»; no se envía ningún aviso.
-- **Registro de auditoría legible.** Se guarda, pero no hay pantalla para leerlo ni política de conservación (TTL).
+- **Plazo de conservación de la auditoría.** Ya existe `AUDIT_RETENTION_DAYS` (0 = para siempre); falta que el hospital decida los días y que se configure en producción.
