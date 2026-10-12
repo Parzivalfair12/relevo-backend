@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
-import { kindSchema, therapistInputSchema } from '../shared/index.js';
+import { kindSchema, therapistInputSchema, type TherapistPageDTO } from '../shared/index.js';
 import { Schedule, Therapist } from '../models/index.js';
 import { HttpError, authenticate, requireRole } from '../middleware/index.js';
 import { checkServices, ci, escapeRe, h, idParam, notId, parse } from '../lib/http.js';
@@ -18,6 +18,8 @@ const querySchema = z.object({
   active: z.enum(['true', 'false']).optional()
 });
 
+const pageSchema = querySchema.extend({ page: z.coerce.number().int().min(1).max(100_000).default(1), limit: z.coerce.number().int().min(1).max(100).default(25) });
+
 /** Cuántos cuadros incluyen a cada terapeuta (el directorio lo muestra en la columna "Cuadros"). */
 async function scheduleCounts(ids?: unknown[]): Promise<Map<string, number>> {
   // aggregate no pasa por sanitizeFilter, por eso aquí $in va sin marcar
@@ -29,14 +31,33 @@ async function scheduleCounts(ids?: unknown[]): Promise<Map<string, number>> {
   return new Map(rows.map(r => [String(r._id), r.n as number]));
 }
 
-/** Lectura para todos (administradoras y coordinadoras); escritura solo administradores. */
-therapists.get('/', h(async (req, res) => {
-  const { q, service, kind, active } = parse(querySchema, req.query);
+/** Los filtros del directorio, tal como los entienden las dos consultas (lista completa y página) */
+function filterOf({ q, service, kind, active }: z.infer<typeof querySchema>) {
   const filter: Record<string, unknown> = {};
   if (service) filter.serviceIds = service;
   if (kind) filter.defaultKind = kind;
   if (active) filter.active = active === 'true';
   if (q) { const re = new RegExp(escapeRe(q), 'i'); filter.$or = [{ name: mongoose.trusted({ $regex: re }) }, { document: mongoose.trusted({ $regex: re }) }]; }
+  return filter;
+}
+
+/**
+ * Una página del directorio (la pantalla Equipo). Mismos filtros que la lista completa, por orden alfabético.
+ * El conteo de cuadros solo se calcula para las personas de la página.
+ */
+therapists.get('/page', h(async (req, res) => {
+  const { page, limit, ...rest } = parse(pageSchema, req.query);
+  const filter = filterOf(rest);
+  const total = await Therapist.countDocuments(filter);
+  const list = await Therapist.find(filter).collation(ci).sort({ name: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean();
+  const counts = await scheduleCounts(list.map(t => t._id));
+  const body: TherapistPageDTO = { items: list.map(t => therapistDTO(t, counts.get(String(t._id)) ?? 0)), total, page, pageSize: limit };
+  res.json(body);
+}));
+
+/** Lectura para todos (administradoras y coordinadoras); escritura solo administradores. Devuelve todo el directorio filtrado. */
+therapists.get('/', h(async (req, res) => {
+  const filter = filterOf(parse(querySchema, req.query));
   const [list, counts] = await Promise.all([
     Therapist.find(filter).collation(ci).sort({ name: 1 }).lean(),
     scheduleCounts()

@@ -100,7 +100,11 @@ export const absenceInputSchema = absenceRange.extend({ code: absenceCodeSchema 
 export const absenceDeleteSchema = z.object({
   version: z.coerce.number().int().min(0), therapistId: objectId, from: z.coerce.number().int().min(1).max(31), to: z.coerce.number().int().min(1).max(31)
 }).refine(a => a.to >= a.from, { message: 'El día final no puede ser anterior al inicial.', path: ['to'] });
-export const scheduleListQuerySchema = z.object({ service: objectId.optional(), status: scheduleStatusSchema.optional() });
+/** Mes en la URL: AAAA-MM con el mes de 01 a 12 (en el código los meses siguen siendo 0 a 11) */
+const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'El período debe ser AAAA-MM (por ejemplo 2026-09).');
+/** `from`/`to` limitan la lista a esos meses (inclusive): sin ellos vienen todos los cuadros visibles */
+export const scheduleListQuerySchema = z.object({ service: objectId.optional(), status: scheduleStatusSchema.optional(), from: yearMonth.optional(), to: yearMonth.optional() })
+  .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'El mes inicial no puede ser posterior al final.', path: ['to'] });
 
 /* ----- Excel y ODS ----- */
 export const exportQuerySchema = z.object({ format: z.enum(['xlsx', 'ods']).default('xlsx') });
@@ -124,7 +128,6 @@ export const importBatchSchema = z.object({ tables: z.array(importSchema).min(1,
 export const importPreviewQuerySchema = z.object({ serviceId: objectId.optional() });
 
 /* ----- Resumen: el período va como YYYY-MM (mes 01 a 12, formato de URL; en el código los meses siguen siendo 0 a 11) ----- */
-const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'El período debe ser AAAA-MM (por ejemplo 2026-09).');
 export const dashboardQuerySchema = z.object({ service: objectId.optional(), from: yearMonth.optional(), to: yearMonth.optional() })
   .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'El período inicial no puede ser posterior al final.', path: ['to'] });
 
@@ -159,11 +162,17 @@ export interface ScheduleDTO {
   /** Días (índice 0 a n−1) en que la terapeuta ya trabaja en OTRO cuadro del mismo mes, tenga o no turno aquí: el generador los evita y las horas esperadas los descuentan */
   occupied: Record<string, number[]>;
 }
+/** Un cuadro en el índice liviano (sin turnos): sirve para saber qué meses y servicios tienen cuadro sin cargarlos */
+export interface ScheduleIndexItemDTO { serviceId: string; year: number; month: number; status: 'bor'|'pub' }
+/** Versión actual de un cuadro, para avisar sin esperar a que se guarde que alguien más lo cambió */
+export interface ScheduleVersionDTO { version: number; updatedByName?: string }
 /** Tarjeta de la lista de cuadros */
 export interface ScheduleSummaryDTO {
   id: string; serviceId: string; year: number; month: number; status: 'bor'|'pub'; ownerId: string; ownerName: string;
   days: number; totalHours: number; neededHours: number; planta: number; apoyo: number; criticalAlerts: number
 }
+/** Una página del directorio de terapeutas */
+export interface TherapistPageDTO { items: TherapistDTO[]; total: number; page: number; pageSize: number }
 /** Una terapeuta activa del directorio al crear un cuadro: si viene marcada, con qué tipo y meta, y en qué otros cuadros del mes ya está */
 export interface NewScheduleOptionDTO {
   therapistId: string; name: string; inService: boolean; selected: boolean; kind: Kind; targetHours: number | null;

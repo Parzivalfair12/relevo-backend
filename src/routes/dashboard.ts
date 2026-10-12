@@ -1,4 +1,5 @@
 import { Router, type Request } from 'express';
+import mongoose from 'mongoose';
 import { dashboardQuerySchema, type DashboardDTO, type DashboardTherapistDetail } from '../shared/index.js';
 import { Schedule, Service } from '../models/index.js';
 import { HttpError, authenticate } from '../middleware/index.js';
@@ -13,15 +14,30 @@ dashboard.use(authenticate);
  * Carga lo que el resumen necesita según quién pregunta:
  * administrador = todos los cuadros; coordinadora = solo los de sus servicios (403 si pide otro servicio).
  * Sin período, se toma el mes más reciente que tenga cuadros.
+ *
+ * No se lee todo el histórico: primero se averiguan, con una agregación liviana, los tres meses más recientes (para el gráfico
+ * de horas por mes) y de ahí el período; después solo se cargan los cuadros de esos meses y del mes anterior al período
+ * (continuidad y cruces), de todos los servicios.
  */
 async function scope(req: Request) {
   const q = parse(dashboardQuerySchema, req.query);
   if (q.service) assertAccess(req.user!, q.service);
-  const all = (await Schedule.find().lean()) as unknown as ScheduleDoc[];
-  const visible = all.filter(s => req.user!.role === 'admin' || req.user!.serviceIds.includes(String(s.serviceId)));
-  const filtered = q.service ? visible.filter(s => String(s.serviceId) === q.service) : visible;
-  const latest = filtered.length ? Math.max(...filtered.map(scheduleKey)) : new Date().getFullYear() * 12 + new Date().getMonth();
+  const admin = req.user!.role === 'admin';
+  // La agregación no pasa por la conversión de tipos de Mongoose: los ids se convierten aquí
+  const oid = (id: string) => new mongoose.Types.ObjectId(id);
+  const match: Record<string, unknown> = q.service ? { serviceId: oid(q.service) } : admin ? {} : { serviceId: { $in: req.user!.serviceIds.map(oid) } };
+  const recent = (await Schedule.aggregate([
+    { $match: match }, { $group: { _id: { y: '$year', m: '$month' } } }, { $sort: { '_id.y': -1, '_id.m': -1 } }, { $limit: 3 }
+  ])).map(r => r._id.y * 12 + r._id.m as number);
+
+  const latest = recent.length ? recent[0] : new Date().getFullYear() * 12 + new Date().getMonth();
   const from = q.from ? ymKey(q.from) : q.to ? ymKey(q.to) : latest, to = q.to ? ymKey(q.to) : q.from ? ymKey(q.from) : latest;
+  const needed = (k: number) => (k >= from - 1 && k <= to) || recent.includes(k);
+  const keys = [from - 1, to, ...recent];
+  const all = ((await Schedule.find({ year: mongoose.trusted({ $gte: Math.floor(Math.min(...keys) / 12), $lte: Math.floor(Math.max(...keys) / 12) }) }).lean()) as unknown as ScheduleDoc[])
+    .filter(s => needed(scheduleKey(s)));
+  const visible = all.filter(s => admin || req.user!.serviceIds.includes(String(s.serviceId)));
+  const filtered = q.service ? visible.filter(s => String(s.serviceId) === q.service) : visible;
   const inRange = filtered.filter(s => scheduleKey(s) >= from && scheduleKey(s) <= to);
   const [names, serviceNames, services] = await Promise.all([
     namesFor([...new Set(inRange.flatMap(s => s.members.map(m => String(m.therapistId))))]), serviceNameMap(), Service.find().sort({ _id: 1 }).lean()

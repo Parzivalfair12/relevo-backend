@@ -5,13 +5,14 @@ import { daysIn, type Cell, type Code } from '../engine/index.js';
 import {
   absenceDeleteSchema, absenceInputSchema, cellsUpdateSchema, defaultCoverage, defaultRules, exportQuerySchema, generateSchema, importBatchSchema, importPreviewQuerySchema, importSchema,
   MESES, newScheduleProposalQuerySchema, newScheduleSchema, scheduleListQuerySchema, scheduleUpdateSchema, type Coverage, type ImportBatchItemDTO, type ImportBatchResultDTO, type ImportPreviewDTO, type ImportResultDTO,
-  type NewScheduleOptionDTO, type NewScheduleProposalDTO
+  type NewScheduleOptionDTO, type NewScheduleProposalDTO, type ScheduleIndexItemDTO, type ScheduleVersionDTO
 } from '../shared/index.js';
 import { config } from '../config.js';
-import { Schedule, Service, Therapist } from '../models/index.js';
+import { Schedule, Service, Therapist, User } from '../models/index.js';
 import { HttpError, authenticate } from '../middleware/index.js';
 import { h, idParam, notId, parse } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
+import { ymKey } from '../lib/dashboard.js';
 import { heavy, regen } from '../lib/limits.js';
 import { toOds, toXlsx } from '../lib/export-files.js';
 import { ImportError, MAX_FILE_BYTES, matchName, nameKey, normalizeCells, parseWorkbook, plain, serviceFor } from '../lib/import-sheet.js';
@@ -50,16 +51,37 @@ const setLock = (m: MemberDoc, day: number, code: Code | null): boolean => {
   return !code && m.locked.length < before; // true si se soltó una casilla fijada
 };
 
-/** Tarjetas: el administrador ve todos los cuadros; la coordinadora, los de sus servicios. */
+const monthKey = (s: { year: number; month: number }) => s.year * 12 + s.month;
+const canSee = (req: Request, serviceId: unknown) => req.user!.role === 'admin' || req.user!.serviceIds.includes(String(serviceId));
+
+/**
+ * Tarjetas: el administrador ve todos los cuadros; la coordinadora, los de sus servicios.
+ * Con `from`/`to` (AAAA-MM) solo se leen los cuadros de esos meses y del mes anterior al primero (para continuar la secuencia):
+ * con años de histórico no hace falta cargarlo todo para pintar los meses que se ven.
+ */
 schedules.get('/', h(async (req, res) => {
   const q = parse(scheduleListQuerySchema, req.query);
   if (q.service) assertAccess(req.user!, q.service);
-  const all = (await Schedule.find().lean()) as unknown as ScheduleDoc[];
+  const lo = q.from ? ymKey(q.from) : -Infinity, hi = q.to ? ymKey(q.to) : Infinity;
+  const bounded = q.from || q.to;
+  const yearFilter = bounded ? { year: mongoose.trusted({ ...(q.from ? { $gte: Math.floor((lo - 1) / 12) } : {}), ...(q.to ? { $lte: Math.floor(hi / 12) } : {}) }) } : {};
+  const all = ((await Schedule.find(yearFilter).lean()) as unknown as ScheduleDoc[]).filter(s => monthKey(s) >= lo - 1 && monthKey(s) <= hi);
   const visible = all
-    .filter(s => req.user!.role === 'admin' || req.user!.serviceIds.includes(String(s.serviceId)))
+    .filter(s => canSee(req, s.serviceId) && monthKey(s) >= lo && monthKey(s) <= hi)
     .filter(s => (!q.service || String(s.serviceId) === q.service) && (!q.status || s.status === q.status))
     .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month) || String(a.serviceId).localeCompare(String(b.serviceId)));
   res.json(await summaries(all, visible));
+}));
+
+/**
+ * Índice liviano de los cuadros visibles (servicio, mes y estado, sin turnos): la web lo usa para saber qué meses tienen cuadros
+ * (períodos del resumen) y si ya existe uno al importar, sin traer todo el histórico.
+ */
+schedules.get('/index', h(async (req, res) => {
+  const filter = req.user!.role === 'admin' ? {} : { serviceId: mongoose.trusted({ $in: req.user!.serviceIds }) };
+  const rows = (await Schedule.find(filter).select('serviceId year month status').lean()) as unknown as ScheduleDoc[];
+  const body: ScheduleIndexItemDTO[] = rows.map(s => ({ serviceId: String(s.serviceId), year: s.year, month: s.month, status: s.status }));
+  res.json(body);
 }));
 
 const previousOf = async (serviceId: string, year: number, month: number) => {
@@ -303,6 +325,16 @@ schedules.get('/:id/export', heavy, h(async (req, res) => {
 }));
 
 schedules.get('/:id', h(async (req, res) => { res.json(await toDTO(await loadFor(req))); }));
+
+/** Solo la versión y quién hizo el último cambio: el editor la consulta cada tanto para avisar si otra persona cambió el cuadro. */
+schedules.get('/:id/version', h(async (req, res) => {
+  const s = (await Schedule.findById(idParam(req)).select('serviceId __v updatedBy').lean()) as unknown as (ScheduleDoc & { updatedBy?: unknown }) | null;
+  if (!s) throw new HttpError(404, 'NOT_FOUND', 'Cuadro no encontrado');
+  assertAccess(req.user!, s.serviceId);
+  const by: any = s.updatedBy ? await User.findById(s.updatedBy).select('name').lean() : null;
+  const body: ScheduleVersionDTO = { version: s.__v, ...(by?.name ? { updatedByName: by.name } : {}) };
+  res.json(body);
+}));
 
 /** Eliminar un cuadro creado por error. Solo en borrador: uno publicado ya lo vio el equipo y primero vuelve a borrador. */
 schedules.delete('/:id', h(async (req, res) => {
