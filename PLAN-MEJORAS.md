@@ -14,7 +14,7 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | 5 | Operación | ⏸ aplazada (depende de dónde se aloje el sistema) |
 | 6 | Resumen y archivos (mejoras pequeñas) | ◐ (faltan decisiones) |
 | 7 | Motor v2 | ◐ (cruces hechos; falta `MN`) |
-| 8 | Escalado (solo si hace falta) | ☐ |
+| 8 | Escalado | ☑ |
 
 ## Fase 0 · Higiene (hecha)
 - Quitar de `MEJORAS.md` lo que ya está resuelto: `trust proxy` (existe `TRUST_PROXY`) y «primer administrador en producción» (lo cubre `npm run users:bootstrap`).
@@ -71,12 +71,12 @@ Un solo cambio de motor para sincronizar el frontend una vez:
 
 Pasos: cambiar `src/engine`, `npm run golden:update` (revisar el diff), `npm run engine:hash`, pruebas en verde, commit y `npm run sync:engine` en el frontend.
 
-## Fase 8 · Escalado (solo si hace falta)
-Disparador: cuando `npm run perf` se degrade o el histórico crezca.
-- Paginación del directorio de terapeutas.
-- Listar cuadros solo de los meses visibles.
-- Resumen con agregación en MongoDB.
-- Aviso de conflicto en vivo por sondeo de la versión (no SSE).
+## Fase 8 · Escalado (hecha)
+- Directorio por páginas: `GET /therapists/page` (25 por página, máx. 100, mismos filtros, orden alfabético) para la pantalla Equipo; `GET /therapists` sigue devolviendo todo para las listas de selección.
+- Cuadros por ventana de meses: `GET /schedules?from=&to=` lee solo esos meses y el anterior (continuidad); las tarjetas son idénticas a las de la lista completa. La pantalla Cuadros muestra el mes actual y los 5 anteriores y ofrece «Mostrar meses anteriores». `GET /schedules/index` (servicio, mes y estado, sin turnos) alimenta los períodos del resumen y la comprobación de «ya existe» al importar.
+- Resumen: ya no lee todo el histórico; una agregación liviana da los tres meses más recientes y solo se cargan los cuadros del período, del mes anterior y de esos tres meses. No se reescribió la lógica de agregación en MongoDB: sigue en Node sobre los cuadros del período (suficiente a esta escala).
+- Aviso de conflicto en vivo: `GET /schedules/:id/version` y sondeo del editor cada 20 s y al volver a la pestaña. Sin casillas pendientes el cuadro se actualiza solo y avisa; con casillas pendientes aparece el aviso de conflicto. No usa SSE.
+- Los disparadores para volver a mirar el rendimiento siguen siendo `npm run perf` y el volumen de cuadros.
 
 ## Fuera de este plan
 - Auditar casillas individuales (llenaría el registro).

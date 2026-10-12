@@ -1,6 +1,5 @@
 # Mejoras propuestas (no implementar sin aprobación)
 
-- **Paginación del directorio.** El plan la menciona para terapeutas y auditoría; el mockup no tiene paginación y hoy son 18 registros. `GET /therapists` devuelve la lista completa (con filtros en el servidor). Agregar `page`/`limit` cuando el directorio crezca.
 - **Auditoría: detalles traducidos y exportación.** La pantalla muestra el detalle en español aunque la interfaz esté en inglés, y no se puede exportar a Excel; pedirlo si el hospital lo necesita para una revisión.
 
 - **Huella del motor duplicada en dos repos.** El algoritmo vive en `scripts/engine-hash.mjs` (backend) y en `frontend/scripts/sync-engine.mjs`; si se cambia hay que cambiarlo en los dos. Valorar publicar el motor y los esquemas como paquete privado (npm/GitHub Packages) cuando el equipo crezca.
@@ -8,12 +7,9 @@
 
 - **Cruces entre servicios al generar: solo hacia adelante.** El generador evita los días que ya ocupan los cuadros que existen en ese momento; si luego se genera o cambia el otro cuadro, se vuelve a evitar al regenerar ese, pero un cruce que ya estaba pintado no se corrige solo (se sigue avisando como error crítico). Valorar un botón «Resolver cruces».
 - **Eliminar un cuadro publicado.** Hoy solo se elimina en borrador (hay que volver a borrador primero); si las coordinadoras lo piden, se puede permitir con una confirmación más fuerte.
-- **Listar cuadros sin cargarlos todos.** `GET /schedules` lee todos los cuadros para calcular los cruces de las tarjetas; con mucho histórico conviene limitar a los meses visibles.
 - **Auditar casillas individuales.** Se audita crear, generar, cambiar reglas/cobertura/equipo, ausencias y publicar; pintar casillas no, para no llenar el registro.
-- **Aviso de conflicto sin esperar al guardado.** El 409 se descubre al guardar (~800 ms después de pintar); un aviso en vivo (SSE o sondeo) lo anticiparía.
 
 - **Contar un cruce entre servicios una sola vez.** El resumen y las tarjetas lo cuentan una vez por cada cuadro afectado (un cruce suma 2), igual que el mockup; podría mostrarse como 1 cruce.
-- **Calcular el resumen sin leer todos los cuadros.** Lee todos los cuadros y agrega en Node; con mucho histórico conviene filtrar por meses en la consulta o agregar en MongoDB.
 
 - **Exportar con la ausencia escrita como palabra.** El hospital escribe «PERMISO» repartido en los días de la ausencia; la exportación escribe la letra `V`, `I` o `P` (se lee y se reimporta sin ambigüedad). Si el hospital prefiere su estilo, se puede escribir la palabra completa repartida en el tramo.
 - **Turnos que el motor no representa.** El cuadro real trae `MN` (mañana y noche, 18 h) y similares; hoy se avisan y quedan libres. Soportarlos exige cambiar el motor (nuevos códigos y horas) y regenerar los casos fijos.
@@ -29,3 +25,5 @@
 - **Recuperar la contraseña por correo.** Cambiar la propia, el restablecimiento por el administrador y el bloqueo temporal ya están (fase 2); falta el correo, que depende de elegir proveedor SMTP.
 - **Aviso al bloquear una cuenta.** Hoy la persona ve «Demasiados intentos» y el administrador ve la pastilla «Bloqueada»; no se envía ningún aviso.
 - **Plazo de conservación de la auditoría.** Ya existe `AUDIT_RETENTION_DAYS` (0 = para siempre); falta que el hospital decida los días y que se configure en producción.
+- **Resumen agregado en MongoDB.** El resumen ya solo lee los meses necesarios, pero la agregación sigue en Node; pasarla a una agregación de MongoDB solo valdría la pena con muchísimos cuadros por período.
+- **Paginación de la auditoría y de los selectores.** La auditoría ya pagina por cursor; las listas de selección (equipo del cuadro, importar) siguen cargando todo el directorio activo.
