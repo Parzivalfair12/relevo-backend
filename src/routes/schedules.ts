@@ -14,7 +14,7 @@ import { h, idParam, notId, parse } from '../lib/http.js';
 import { audit } from '../lib/audit.js';
 import { heavy, regen } from '../lib/limits.js';
 import { toOds, toXlsx } from '../lib/export-files.js';
-import { ImportError, MAX_FILE_BYTES, matchName, normalizeCells, parseWorkbook } from '../lib/import-sheet.js';
+import { ImportError, MAX_FILE_BYTES, matchName, nameKey, normalizeCells, parseWorkbook, plain, serviceFor } from '../lib/import-sheet.js';
 import { buildLayout } from '../lib/sheet-layout.js';
 import {
   analyze, assertAccess, commit, isOff, namesFor, neighborsOf, normalize, regenerate, serviceNameMap, statsFrom, summaries, toDTO, versionConflict,
@@ -165,9 +165,6 @@ schedules.post('/', h(async (req, res) => {
  *      y qué terapeuta del directorio le corresponde a cada nombre. No guarda nada.
  *   2. /import recibe lo que la usuaria confirmó y crea el cuadro en borrador, con lo importado fijado a mano.
  */
-/** Quita tildes, mayúsculas y signos para comparar el nombre de un servicio con el título de una hoja */
-const plain = (v: string) => v.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-
 schedules.post('/import/preview', heavy, express.raw({ type: () => true, limit: MAX_FILE_BYTES }), h(async (req, res) => {
   const { serviceId } = parse(importPreviewQuerySchema, req.query);
   if (serviceId) assertAccess(req.user!, serviceId);
@@ -181,12 +178,7 @@ schedules.post('/import/preview', heavy, express.raw({ type: () => true, limit: 
   const services = ((await Service.find().select('name').lean()) as unknown as { _id: unknown; name: string }[])
     .filter(sv => req.user!.role === 'admin' || req.user!.serviceIds.includes(String(sv._id)))
     .map(sv => ({ id: String(sv._id), key: plain(sv.name) }));
-  const serviceOf = (t: { sheet: string; title: string }): string | null => {
-    if (serviceId) return serviceId;
-    const hay = plain(`${t.title} ${t.sheet}`);
-    const hits = services.filter(sv => sv.key && hay.includes(sv.key));
-    return hits.length === 1 ? hits[0].id : null;
-  };
+  const serviceOf = (t: { sheet: string; title: string }): string | null => serviceId ?? serviceFor(t, services);
   const body: ImportPreviewDTO = {
     tables: tables.map(t => {
       const sid = serviceOf(t);
@@ -205,17 +197,50 @@ schedules.post('/import/preview', heavy, express.raw({ type: () => true, limit: 
   res.json(body);
 }));
 
-/** Crea un cuadro en borrador con lo que la usuaria confirmó. Lo comparten /import y /import/batch. */
+type NewTherapist = { _id: mongoose.Types.ObjectId; name: string; defaultKind: 'fija' | 'apoyo' };
+/**
+ * Crea un cuadro en borrador con lo que la usuaria confirmó. Lo comparten /import y /import/batch.
+ * Si se registraron terapeutas nuevas y la importación no se completa, se deshace ese registro: no quedan personas sueltas.
+ */
 async function createImported(req: Request, d: z.infer<typeof importSchema>): Promise<ImportResultDTO> {
+  const created: NewTherapist[] = [];
+  try { return await importInto(req, d, created); }
+  catch (e) {
+    if (created.length) await Therapist.deleteMany({ _id: mongoose.trusted({ $in: created.map(c => c._id) }) }).catch(() => undefined);
+    throw e;
+  }
+}
+async function importInto(req: Request, d: z.infer<typeof importSchema>, created: NewTherapist[]): Promise<ImportResultDTO> {
   assertAccess(req.user!, d.serviceId);
   const service: any = await Service.findById(d.serviceId).lean();
   if (!service) throw new HttpError(400, 'VALIDATION', 'El servicio no existe.');
   const dup = () => new HttpError(409, 'DUPLICATE', 'Ya existe un cuadro de este servicio en ese mes.');
   if (await Schedule.exists({ serviceId: d.serviceId, year: d.year, month: d.month })) throw dup();
-  const ids = d.members.map(m => m.therapistId);
-  if (new Set(ids).size !== ids.length) throw new HttpError(400, 'VALIDATION', 'Hay terapeutas repetidas: cada persona del directorio solo puede salir una vez.');
+  // Personas nuevas (solo un administrador las registra): si ya existe una con ese nombre se usa esa, así repetir la importación no duplica a nadie
+  const news = d.members.filter(m => m.newName);
+  if (news.length && req.user!.role !== 'admin') throw new HttpError(403, 'FORBIDDEN', 'Solo un administrador puede registrar terapeutas nuevas. Pídele que la registre en Equipo.');
+  const keys = news.map(m => nameKey(m.newName!));
+  if (new Set(keys).size !== keys.length) throw new HttpError(400, 'VALIDATION', 'Hay terapeutas repetidas: cada persona solo puede salir una vez.');
+  const existing = news.length ? ((await Therapist.find().select('name active').lean()) as unknown as { _id: mongoose.Types.ObjectId; name: string; active: boolean }[]) : [];
+  const byKey = new Map(existing.map(t => [nameKey(t.name), t]));
+  for (const m of news) {
+    const t = byKey.get(nameKey(m.newName!));
+    if (t && !t.active) throw new HttpError(400, 'VALIDATION', `${t.name} ya está en el directorio pero inactiva. Actívala en Equipo para poder importarla.`);
+    if (t) m.therapistId = String(t._id); // ya existe: se usa en vez de crear otra
+  }
+  const toCreate = news.filter(m => !m.therapistId);
+  const ids = d.members.map(m => m.therapistId).filter((x): x is string => !!x);
+  if (new Set(ids).size !== ids.length || ids.length + toCreate.length !== d.members.length) throw new HttpError(400, 'VALIDATION', 'Hay terapeutas repetidas: cada persona del directorio solo puede salir una vez.');
   const found = (await Therapist.find({ _id: mongoose.trusted({ $in: ids }), active: true }).select('name defaultKind').lean()) as unknown as { _id: mongoose.Types.ObjectId; name: string; defaultKind: 'fija' | 'apoyo' }[];
   if (found.length !== ids.length) throw new HttpError(400, 'VALIDATION', 'Alguna terapeuta no existe o está inactiva.');
+  // Se crean al final de las validaciones; si luego falla algo, createImported las deshace
+  for (const m of toCreate) {
+    const t = await Therapist.create({ name: m.newName, position: 'Terapeuta respiratoria', defaultKind: m.kind ?? 'fija', serviceIds: [d.serviceId], active: true });
+    created.push({ _id: t._id, name: t.name, defaultKind: t.defaultKind });
+    m.therapistId = String(t._id);
+    await audit(req, 'create', 'therapist', t._id, `Registró a ${t.name} al importar el cuadro de ${service.name} ${d.month + 1}/${d.year}`);
+  }
+  found.push(...created);
 
   const n = daysIn(d.year, d.month), warnings: string[] = [];
   const members: MemberDoc[] = d.members.map(m => {
@@ -225,14 +250,14 @@ async function createImported(req: Request, d: z.infer<typeof importSchema>): Pr
   });
   const coverage: Coverage = { ...defaultCoverage(), ...(service.defaultCoverage ?? {}) };
   const draft = { _id: new mongoose.Types.ObjectId(), serviceId: new mongoose.Types.ObjectId(d.serviceId), year: d.year, month: d.month, status: 'bor' as const, ownerId: new mongoose.Types.ObjectId(req.user!.id), coverage, rules: defaultRules(), seed: 3, __v: 0, members } as ScheduleDoc;
-  const [near, names, serviceNames] = await Promise.all([neighborsOf(draft), namesFor(ids), serviceNameMap()]);
+  const [near, names, serviceNames] = await Promise.all([neighborsOf(draft), namesFor(found.map(f => f._id)), serviceNameMap()]);
   try {
-    const created = await Schedule.create({
+    const createdSchedule = await Schedule.create({
       serviceId: draft.serviceId, year: d.year, month: d.month, status: 'bor', ownerId: draft.ownerId, updatedBy: draft.ownerId,
       coverage, rules: draft.rules, seed: draft.seed, members, stats: statsFrom(analyze(normalize(draft), names, near, serviceNames))
     });
-    await audit(req, 'import', 'schedule', created._id, `Importó el cuadro de ${service.name} ${d.month + 1}/${d.year} (${members.length} personas${warnings.length ? `, ${warnings.length} casillas sin entender` : ''})`);
-    return { schedule: await toDTO((await Schedule.findById(created._id).lean()) as unknown as ScheduleDoc), warnings };
+    await audit(req, 'import', 'schedule', createdSchedule._id, `Importó el cuadro de ${service.name} ${d.month + 1}/${d.year} (${members.length} personas${warnings.length ? `, ${warnings.length} casillas sin entender` : ''})`);
+    return { schedule: await toDTO((await Schedule.findById(createdSchedule._id).lean()) as unknown as ScheduleDoc), warnings };
   } catch (e) {
     if ((e as { code?: number }).code === 11000) throw dup();
     throw e;

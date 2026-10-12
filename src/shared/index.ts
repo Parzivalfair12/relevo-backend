@@ -111,9 +111,13 @@ export const importSchema = z.object({
    * `kind` (planta o apoyo) y `targetHours` (meta mensual) son opcionales: sin ellos se usa el tipo del directorio y la meta automática.
    */
   members: z.array(z.object({
-    therapistId: objectId, cells: z.array(z.string().max(40)).max(31),
+    /** Una persona del directorio… */
+    therapistId: objectId.optional(),
+    /** …o el nombre de alguien que todavía no está en el directorio: se registra al importar (solo administradores) */
+    newName: z.string().trim().min(3, 'El nombre es muy corto.').max(120).optional(),
+    cells: z.array(z.string().max(40)).max(31),
     kind: kindSchema.optional(), targetHours: targetHoursSchema.optional()
-  })).min(2, 'Se necesitan al menos 2 terapeutas').max(60)
+  }).refine(m => !!m.therapistId !== !!m.newName, { message: 'Elige una terapeuta del directorio o escribe el nombre de una nueva.' })).min(2, 'Se necesitan al menos 2 terapeutas').max(60)
 });
 /** Varias tablas del archivo de una vez: cada una crea su propio cuadro */
 export const importBatchSchema = z.object({ tables: z.array(importSchema).min(1, 'Elige al menos una tabla.').max(30) });

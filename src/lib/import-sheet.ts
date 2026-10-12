@@ -145,6 +145,9 @@ export function normalizeCells(raw: string[], days: number): NormalizedRow {
 /* ====================== Nombres del archivo → terapeutas del directorio ====================== */
 const nameTokens = (s: string) => strip(s).toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
 
+/** Clave para comparar nombres de personas: sin tildes, mayúsculas ni signos y con un solo espacio entre palabras */
+export const nameKey = (s: string) => nameTokens(s).join(' ');
+
 export interface Candidate { id: string; name: string }
 /**
  * Coincidencia exacta (sin tildes ni mayúsculas) o, si el nombre del archivo es más corto («MERCEDES BECERRA»),
@@ -158,4 +161,36 @@ export function matchName(name: string, pool: Candidate[]): { matchId: string | 
   const contained = scored.filter(s => s.all);
   if (exact.length === 0 && contained.length === 1) return { matchId: contained[0].c.id, suggestions: [] };
   return { matchId: null, suggestions: scored.filter(s => s.shared >= 1).sort((a, b) => b.shared - a.shared).slice(0, 3).map(s => s.c) };
+}
+
+/* ====================== Servicio de una tabla ====================== */
+/** Quita tildes, mayúsculas y signos para comparar el nombre de un servicio con el título o la hoja de una tabla */
+export const plain = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+
+const MONTH_WORDS = new Set(['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']);
+/** Palabras que un nombre de hoja trae por costumbre y no dicen nada del servicio */
+const GENERIC_WORDS = new Set(['HOJA', 'COPIA', 'DE', 'DEL', 'LA', 'EL', 'LOS', 'LAS', 'Y', 'TURNOS', 'CUADRO', 'PROFESIONALES', 'SERV', 'SERVICIO']);
+
+/**
+ * A qué servicio corresponde una tabla (null si no se puede saber con seguridad). Dos intentos, en orden:
+ *  1. El nombre completo de un servicio aparece en el título o en la hoja («PROFESIONALES UCI NEUROCRITICA»). Si aparecen
+ *     varios, solo se elige el más largo cuando los demás están contenidos en él («Hospitalización» y «Hospitalización 7° piso»).
+ *  2. Si no, las palabras útiles del nombre de la hoja (sin meses, años ni palabras de costumbre) son abreviaturas de un
+ *     único servicio: «UCI» o «UCI NEURO» para «UCI Neurocrítica». Cada palabra debe empezar una palabra del servicio.
+ */
+export function serviceFor(t: { title: string; sheet: string }, services: { id: string; key: string }[]): string | null {
+  const hay = plain(`${t.title} ${t.sheet}`);
+  const hits = services.filter(sv => sv.key && hay.includes(sv.key));
+  if (hits.length === 1) return hits[0].id;
+  if (hits.length > 1) {
+    const longest = hits.reduce((a, b) => (b.key.length > a.key.length ? b : a));
+    return hits.every(h => h === longest || longest.key.includes(h.key)) ? longest.id : null;
+  }
+  const words = plain(t.sheet).split(' ').filter(w => w && !/^\d+$/.test(w) && !MONTH_WORDS.has(w) && !GENERIC_WORDS.has(w));
+  if (!words.length) return null;
+  const cand = services.filter(sv => {
+    const kw = sv.key.split(' ');
+    return words.every(w => (w.length >= 3 ? kw.some(k => k.startsWith(w)) : kw.includes(w)));
+  });
+  return cand.length === 1 ? cand[0].id : null;
 }
