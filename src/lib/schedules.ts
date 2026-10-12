@@ -71,6 +71,22 @@ export function busyFor(s: ScheduleDoc, others: ScheduleDoc[], serviceNames: Map
   return busy;
 }
 
+/**
+ * Días (índice 0 a n−1) en que cada terapeuta del cuadro ya trabaja en OTRO cuadro del mismo mes, haya o no turno suyo aquí.
+ * Es lo que el generador evita; `busyFor` en cambio solo marca los días en que de verdad hay cruce.
+ */
+export function occupiedFor(s: ScheduleDoc, others: ScheduleDoc[]): Record<string, number[]> {
+  const mine = new Set(s.members.map(idOf)), days: Record<string, Set<number>> = {};
+  for (const o of others) {
+    if (String(o._id) === String(s._id) || o.year !== s.year || o.month !== s.month) continue;
+    for (const om of o.members) {
+      if (!mine.has(idOf(om))) continue;
+      om.days.forEach((c, d) => { if (isWork(c)) (days[idOf(om)] ??= new Set()).add(d); });
+    }
+  }
+  return Object.fromEntries(Object.entries(days).map(([id, set]) => [id, [...set].sort((a, b) => a - b)]));
+}
+
 /** El mismo texto que el mockup: «Nombre: el día N también trabaja en Servicio». */
 export function conflictIssues(s: ScheduleDoc, names: Map<string, string>, busy: Record<string, Record<number, string>>): Issue[] {
   const out: Issue[] = [];
@@ -81,11 +97,11 @@ export function conflictIssues(s: ScheduleDoc, names: Map<string, string>, busy:
   return out;
 }
 
-export function toConfig(s: ScheduleDoc, names: Map<string, string>, prev: Record<string, Cell[]>): Config {
+export function toConfig(s: ScheduleDoc, names: Map<string, string>, prev: Record<string, Cell[]>, busy?: Record<string, number[]>): Config {
   const staff: Person[] = s.members.map(m => ({ id: idOf(m), name: names.get(idOf(m)) ?? 'Terapeuta eliminada', kind: m.kind, targetHours: m.targetHours ?? null }));
   const locked: Config['locked'] = {};
   for (const m of s.members) locked[idOf(m)] = lockedOf(m);
-  return { year: s.year, month: s.month, staff, cov: s.coverage, rules: s.rules, locked, seed: s.seed, prev };
+  return { year: s.year, month: s.month, staff, cov: s.coverage, rules: s.rules, locked, seed: s.seed, prev, ...(busy ? { busy } : {}) };
 }
 export const gridOf = (s: ScheduleDoc): Grid => Object.fromEntries(s.members.map(m => [idOf(m), m.days]));
 
@@ -130,7 +146,7 @@ export async function toDTO(s: ScheduleDoc): Promise<ScheduleDTO> {
   return {
     id: String(s._id), serviceId: String(s.serviceId), year: s.year, month: s.month, status: s.status,
     ownerId: String(s.ownerId), ownerName: userName(s.ownerId) ?? 'Usuario', updatedByName: userName(s.updatedBy),
-    coverage: s.coverage, rules: s.rules, seed: s.seed, version: s.__v, prev: a.prev, busy: a.busy,
+    coverage: s.coverage, rules: s.rules, seed: s.seed, version: s.__v, prev: a.prev, busy: a.busy, occupied: occupiedFor(s, others),
     members: s.members.map(m => ({ therapistId: idOf(m), name: names.get(idOf(m)) ?? 'Terapeuta eliminada', kind: m.kind, targetHours: m.targetHours ?? null, days: m.days, locked: lockedOf(m) }))
   };
 }
@@ -157,7 +173,8 @@ export async function summaries(all: ScheduleDoc[], visible: ScheduleDoc[]): Pro
 export async function regenerate(s: ScheduleDoc, members: MemberDoc[], over: { coverage?: Coverage; rules?: Rules; seed?: number }, others: ScheduleDoc[]): Promise<MemberDoc[]> {
   const { generateInWorker } = await import('./generate.js');
   const draft: ScheduleDoc = { ...s, members, coverage: over.coverage ?? s.coverage, rules: over.rules ?? s.rules, seed: over.seed ?? s.seed };
-  const grid = await generateInWorker(toConfig(draft, new Map(), prevFor(draft, others)));
+  // El generador evita los días en que cada persona ya trabaja en otro servicio ese mes (no crea cruces)
+  const grid = await generateInWorker(toConfig(draft, new Map(), prevFor(draft, others), occupiedFor(draft, others)));
   return members.map(m => ({ ...m, days: grid[idOf(m)] }));
 }
 

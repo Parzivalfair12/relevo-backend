@@ -57,6 +57,18 @@ const cases: Case[] = [
     cfg: { year: 2026, month: 2, staff: staff('a,b,c,d,e:apoyo,f:apoyo'), cov, rules: { ...rules, maxConsec: 3 }, locked: {}, seed: 21 }
   },
   {
+    // a y b ya trabajan en otro servicio varios días: el generador no debe darles turno esos días
+    name: 'cruces-evitados-otros-servicios-sep-2026',
+    cfg: { year: 2026, month: 8, staff: staff('a,b,c,d,e:apoyo'), cov, rules, locked: {}, seed: 3,
+      busy: { a: [0, 1, 2, 3, 4, 5, 6], b: [10, 11, 12, 20, 21], e: [14, 15] } }
+  },
+  {
+    // una casilla fijada a mano en un día ocupado se respeta; una ausencia suma a los días no disponibles
+    name: 'cruces-con-celda-fijada-y-ausencia-oct-2026',
+    cfg: { year: 2026, month: 9, staff: staff('a,b,c,d,e,f:apoyo'), cov, rules: { ...rules, support: 'equal' }, seed: 8,
+      locked: { a: { 6: 'M' }, b: range(3, 9, 'V') }, busy: { a: [4, 5, 6, 7, 8], b: [20, 21, 22], c: [0, 1, 30] } }
+  },
+  {
     name: 'validar-malla-con-problemas-sep-2026',
     cfg: { year: 2026, month: 8, staff: staff('a,b,c'), cov, rules, locked: {}, prev: { a: ['T', 'N'] } },
     grid: brokenGrid()

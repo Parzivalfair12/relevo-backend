@@ -156,6 +156,8 @@ export interface ScheduleDTO {
   prev: Record<string, Cell[]>;
   /** Días (índice 0 a n−1) en que la terapeuta ya trabaja en OTRO cuadro del mismo mes: terapeuta → día → nombre del servicio */
   busy: Record<string, Record<number, string>>;
+  /** Días (índice 0 a n−1) en que la terapeuta ya trabaja en OTRO cuadro del mismo mes, tenga o no turno aquí: el generador los evita y las horas esperadas los descuentan */
+  occupied: Record<string, number[]>;
 }
 /** Tarjeta de la lista de cuadros */
 export interface ScheduleSummaryDTO {

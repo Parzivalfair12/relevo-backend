@@ -23,6 +23,11 @@ export interface Config {
   staff: Person[]; cov: Coverage; rules: Rules; locked: Locked; seed?: number;
   /** últimos días del mes anterior por persona, para continuar la secuencia */
   prev?: Record<string, Cell[]>;
+  /**
+   * Días (índice 0 = día 1) en que la persona YA trabaja en otro cuadro del mismo mes. El generador no le asigna turno esos días
+   * (y no los cuenta como disponibles al repartir las horas); una casilla fijada a mano sí se respeta. Sin esto el comportamiento es el de siempre.
+   */
+  busy?: Record<string, number[]>;
 }
 export type Grid = Record<string, Cell[]>;
 export interface Issue { id: string | null; day: number; sev: 'err' | 'warn'; msg: string; sh?: 'M' | 'T' | 'N' }
@@ -51,11 +56,14 @@ export function generate(cfg: Config): Grid {
   const { year, month, staff, cov, rules, locked, seed } = cfg;
   const n = daysIn(year, month), rand = rng(seed || 1);
   const grid: Grid = {}, st: Record<string, PState> = {};
+  const occupied = (id: string) => new Set(cfg.busy?.[id] ?? []);
+  const busy: Record<string, Set<number>> = Object.fromEntries(staff.map(p => [p.id, occupied(p.id)]));
 
   staff.forEach(p => {
     grid[p.id] = Array<Cell>(n).fill('');
     let avail = 0;
-    for (let i = 0; i < n; i++) { const c = (locked[p.id] || {})[i]; if (!c || !OFF.includes(c)) avail++; }
+    // No está disponible un día de ausencia o, si no hay nada fijado, un día en que ya trabaja en otro cuadro
+    for (let i = 0; i < n; i++) { const c = (locked[p.id] || {})[i]; const off = c ? OFF.includes(c) : busy[p.id].has(i); if (!off) avail++; }
     const pv = (cfg.prev || {})[p.id] || [];
     const lc = pv.length ? pv[pv.length - 1] : '';
     let cs = 0;
@@ -84,6 +92,7 @@ export function generate(cfg: Config): Grid {
           let bs = Infinity;
           for (const p of staff) {
             if (taken.has(p.id)) continue;
+            if (busy[p.id].has(d)) continue; // ya trabaja ese día en otro servicio
             if ((pass === 0) === isSup(p, rules)) continue;
             const s = st[p.id];
             if (rules.restAfterN && s.last === 'N') continue;
@@ -124,6 +133,7 @@ function balance(cfg: Config, grid: Grid, n: number, rand: () => number) {
   const tgt = targets(cfg, grid);
   const dev = (id: string) => hours(id) - (tgt[id] as number);
   const lock = (id: string, i: number) => (locked[id] || {})[i];
+  const busy = (id: string, i: number) => !!cfg.busy?.[id]?.includes(i);
   const cost = () => {
     let s = 0;
     staff.forEach(p => { if (tgt[p.id] != null) s += Math.abs(dev(p.id)) ** 2; });
@@ -137,6 +147,7 @@ function balance(cfg: Config, grid: Grid, n: number, rand: () => number) {
     if (lock(a.id, i) || lock(b.id, i)) continue;
     const ca = grid[a.id][i], cb = grid[b.id][i];
     if (ca === cb) continue;
+    if ((busy(a.id, i) && isWorkCell(cb)) || (busy(b.id, i) && isWorkCell(ca))) continue; // el intercambio no puede crear un cruce
     grid[a.id][i] = cb; grid[b.id][i] = ca;
     const c2 = cost();
     if (c2 < cur) cur = c2; else { grid[a.id][i] = ca; grid[b.id][i] = cb; }
@@ -147,7 +158,7 @@ function balance(cfg: Config, grid: Grid, n: number, rand: () => number) {
  * Meta de horas por persona de planta (proporcional a sus días disponibles, descontando lo que cubre el apoyo). null = apoyo.
  * Si una persona trae `targetHours`, esa es su meta y el resto se reparte entre quienes no la traen.
  */
-export function targets(cfg: Pick<Config, 'year' | 'month' | 'staff' | 'cov' | 'rules'>, grid: Grid): Record<string, number | null> {
+export function targets(cfg: Pick<Config, 'year' | 'month' | 'staff' | 'cov' | 'rules' | 'busy'>, grid: Grid): Record<string, number | null> {
   const { year, month, staff, cov, rules } = cfg;
   const n = daysIn(year, month);
   const perDay = cov.M * 6 + cov.T * 6 + cov.N * 12;
@@ -157,7 +168,9 @@ export function targets(cfg: Pick<Config, 'year' | 'month' | 'staff' | 'cov' | '
   staff.forEach(p => {
     if (fixed(p)) { if (!isSup(p, rules)) total -= p.targetHours!; else total -= hoursOfRow(grid[p.id]); return; }
     if (isSup(p, rules)) { total -= hoursOfRow(grid[p.id]); return; }
-    let a = 0; for (let i = 0; i < n; i++) if (!OFF.includes(grid[p.id][i])) a++;
+    // Disponible = sin ausencia y sin estar ocupada en otro cuadro (salvo que ese día trabaje aquí: entonces cuenta)
+    const busyDays = cfg.busy?.[p.id] ?? [];
+    let a = 0; for (let i = 0; i < n; i++) { const c = grid[p.id][i]; if (!OFF.includes(c) && !(busyDays.includes(i) && !isWorkCell(c))) a++; }
     w[p.id] = a; wsum += a;
   });
   staff.forEach(p => { t[p.id] = fixed(p) ? p.targetHours! : isSup(p, rules) ? null : (wsum ? Math.max(total, 0) * w[p.id] / wsum : 0); });

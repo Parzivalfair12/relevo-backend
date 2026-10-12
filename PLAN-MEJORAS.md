@@ -13,7 +13,7 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | 4 | Auditoría legible | ☑ |
 | 5 | Operación | ⏸ aplazada (depende de dónde se aloje el sistema) |
 | 6 | Resumen y archivos (mejoras pequeñas) | ◐ (faltan decisiones) |
-| 7 | Motor v2 | ☐ |
+| 7 | Motor v2 | ◐ (cruces hechos; falta `MN`) |
 | 8 | Escalado (solo si hace falta) | ☐ |
 
 ## Fase 0 · Higiene (hecha)
@@ -66,7 +66,7 @@ Técnico:
 
 ## Fase 7 · Motor v2
 Un solo cambio de motor para sincronizar el frontend una vez:
-- Evitar cruces entre servicios al generar (el servidor pasa al motor los días ya ocupados).
+- ☑ Evitar cruces entre servicios al generar: `Config.busy` con los días ocupados en otros cuadros del mes; el generador no asigna turno esos días, los descuenta de la disponibilidad al repartir horas, y el ajuste fino no mueve turnos hacia ellos. Lo fijado a mano se respeta. `engine-golden.json` ganó 2 casos y los 8 anteriores no cambiaron.
 - Turnos como `MN` (mañana y noche, 18 h): antes hay que confirmar con las coordinadoras cómo se validan (descanso, secuencia, horas).
 
 Pasos: cambiar `src/engine`, `npm run golden:update` (revisar el diff), `npm run engine:hash`, pruebas en verde, commit y `npm run sync:engine` en el frontend.

@@ -6,7 +6,7 @@
 - **Huella del motor duplicada en dos repos.** El algoritmo vive en `scripts/engine-hash.mjs` (backend) y en `frontend/scripts/sync-engine.mjs`; si se cambia hay que cambiarlo en los dos. Valorar publicar el motor y los esquemas como paquete privado (npm/GitHub Packages) cuando el equipo crezca.
 - **El plan no tiene la sección «Estructura de los repositorios».** `referencia/` del frontend conserva la versión anterior del plan.
 
-- **Evitar cruces entre servicios al generar.** Hoy se detectan y se marcan como error crítico (como el mockup), pero el motor no sabe qué días ya ocupan otros cuadros. El plan lo prevé para la 1.0: exige cambiar `src/engine` (pasar los días ocupados), regenerar `engine-golden.json` y sincronizar el frontend.
+- **Cruces entre servicios al generar: solo hacia adelante.** El generador evita los días que ya ocupan los cuadros que existen en ese momento; si luego se genera o cambia el otro cuadro, se vuelve a evitar al regenerar ese, pero un cruce que ya estaba pintado no se corrige solo (se sigue avisando como error crítico). Valorar un botón «Resolver cruces».
 - **Eliminar un cuadro publicado.** Hoy solo se elimina en borrador (hay que volver a borrador primero); si las coordinadoras lo piden, se puede permitir con una confirmación más fuerte.
 - **Listar cuadros sin cargarlos todos.** `GET /schedules` lee todos los cuadros para calcular los cruces de las tarjetas; con mucho histórico conviene limitar a los meses visibles.
 - **Auditar casillas individuales.** Se audita crear, generar, cambiar reglas/cobertura/equipo, ausencias y publicar; pintar casillas no, para no llenar el registro.
