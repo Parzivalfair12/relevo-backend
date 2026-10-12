@@ -11,7 +11,7 @@ Estados: ☐ pendiente · ◐ en curso · ☑ hecha
 | 2 | Cuentas | ◐ (falta recuperar por correo) |
 | 3 | Integridad de datos | ☑ |
 | 4 | Auditoría legible | ☑ |
-| 5 | Operación | ☐ |
+| 5 | Operación | ⏸ aplazada (depende de dónde se aloje el sistema) |
 | 6 | Resumen y archivos (mejoras pequeñas) | ☐ |
 | 7 | Motor v2 | ☐ |
 | 8 | Escalado (solo si hace falta) | ☐ |
